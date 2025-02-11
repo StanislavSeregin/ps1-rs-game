@@ -1,23 +1,20 @@
 #![no_std]
 #![no_main]
 
-use psx::gpu::VideoMode;
-use psx::{dprintln, Framebuffer};
+mod common;
+mod spu;
+
+use psx::include_words;
+use spu::spu::SpuUpload;
 
 #[unsafe(no_mangle)]
 fn main() {
-    let buf0 = (0, 0);
-    let buf1 = (0, 240);
-    let res = (320, 240);
-    let txt_offset = (0, 8);
-    let mut fb = Framebuffer::new(buf0, buf1, res, VideoMode::NTSC, None).unwrap();
-    let font = fb.load_default_font();
-    let mut txt = font.new_text_box(txt_offset, res);
+    let audio_sample = include_words!("./../assets/audio/test.adpcm");
+    let mut spu_upload = SpuUpload::new();
+    let mut spu_sample = spu_upload.load(audio_sample);
+    spu_sample.play();
+
     loop {
-        txt.reset();
-        dprintln!(txt, "Hello, world!");
-        fb.draw_sync();
-        fb.wait_vblank();
-        fb.swap();
+        // TODO
     }
 }
