@@ -7,7 +7,6 @@ mod spu;
 mod helpers;
 
 use core::fmt::Write;
-use arrayvec::ArrayString;
 use psx::include_words;
 use spu::SpuUpload;
 use helpers::DebugPrinter;
@@ -16,9 +15,7 @@ use helpers::DebugPrinter;
 fn main() {
     let mut debug_printer = DebugPrinter::new();
     for i in 0..1000 {
-        let mut arr_str = ArrayString::<64>::new();
-        write!(arr_str, "Some text: {i}");
-        debug_printer.print(arr_str);
+        print_debug!(debug_printer, "Some text: {i}");
     }
 
     let audio_sample = include_words!("./../assets/audio/test.adpcm");

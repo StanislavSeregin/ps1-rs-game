@@ -45,3 +45,12 @@ pub fn delay() {
         }
     }
 }
+
+#[macro_export]
+macro_rules! print_debug {
+    ($debug_printer:ident, $fmt:literal) => {
+        let mut buffer = arrayvec::ArrayString::<64>::new();
+        write!(buffer, $fmt).unwrap();
+        $debug_printer.print(buffer);
+    };
+}
