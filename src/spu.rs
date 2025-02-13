@@ -2,7 +2,7 @@ use core::fmt::Write;
 
 use arrayvec::ArrayString;
 
-use crate::{common::MemoryCell};
+use crate::common::MemoryCell;
 
 pub struct SpuUpload {
     pub current_address: u16,
