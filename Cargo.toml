@@ -5,4 +5,5 @@ edition = "2024"
 
 [dependencies]
 arrayvec = {version = "0.7.6", default-features = false}
+ringbuffer = {version = "0.15.0", default-features = false}
 psx = { path = "./psx-sdk-rs/psx" }

@@ -1,10 +1,14 @@
-use core::{arch::asm, cell::{RefCell, RefMut}, fmt::Write};
+use core::{arch::asm, cell::RefCell, fmt::Write};
 
+use arrayvec::ArrayString;
 use psx::{Framebuffer, TextBox};
+
+use ringbuffer::{ConstGenericRingBuffer, RingBuffer};
 
 pub struct DebugPrinter {
     fb: Framebuffer,
-    ref_cell_txt: RefCell<TextBox>
+    txt: TextBox,
+    storage: ConstGenericRingBuffer::<ArrayString::<64>, 28>
 }
 
 impl DebugPrinter {
@@ -15,23 +19,19 @@ impl DebugPrinter {
         txt.reset();
         DebugPrinter {
             fb,
-            ref_cell_txt: RefCell::new(txt)
+            txt,
+            storage: ConstGenericRingBuffer::<ArrayString<64>, 28>::new()
         }
     }
 
-    pub fn print(&mut self, message: &str) {
-        let mut txt = self.ref_cell_txt.borrow_mut();
-        txt.reset();
-        txt.write_str(message);
-        self.fb.draw_sync();
-        self.fb.wait_vblank();
-        self.fb.swap();
-    }
+    pub fn print(&mut self, message: ArrayString<64>) {
+        self.txt.reset();
+        self.storage.push(message);
+        for s in self.storage.iter() {
+            self.txt.write_str(s);
+            self.txt.newline();
+        }
 
-    pub fn write(&mut self, kek: impl Fn(RefMut<TextBox>)) {
-        let mut txt = self.ref_cell_txt.borrow_mut();
-        txt.reset();
-        kek(txt);
         self.fb.draw_sync();
         self.fb.wait_vblank();
         self.fb.swap();
