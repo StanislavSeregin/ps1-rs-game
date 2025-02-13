@@ -2,7 +2,7 @@ use core::fmt::Write;
 
 use arrayvec::ArrayString;
 
-use crate::common::MemoryCell;
+use crate::{common::MemoryCell};
 
 pub struct SpuUpload {
     pub current_address: u16,
@@ -20,12 +20,11 @@ impl SpuUpload {
         }
     }
 
-    pub fn load(&mut self, data: &[u32], debug: &impl Fn(&str)) -> SpuSample {
+    pub fn load(&mut self, data: &[u32]) -> SpuSample {
         let sample = SpuSample::new(self.current_address);
         for (i, chunk) in data.chunks(4096).enumerate() {
             let mut txt = ArrayString::<64>::new();
             write!(txt, "Start: {i}");
-            debug(&txt);
             let (chunk_ptr, chunk_length) = (chunk.as_ptr(), chunk.len());
             Self::SPU_TRANSFER_ADDR.set(self.current_address);
             Self::DMA_BASE_ADDR.set(chunk_ptr as u32);
@@ -34,7 +33,6 @@ impl SpuUpload {
             let kek = Self::DMA_CONTROL.get();
             while kek > 0 {
                 write!(txt, "; {kek}");
-                debug(&txt);
             }
             self.current_address += chunk_length as u16;
         }
@@ -61,8 +59,7 @@ impl SpuSample {
         }
     }
 
-    pub fn play(&mut self, debug: &impl Fn(&str)) -> &Self {
-        debug("puk");
+    pub fn play(&mut self) -> &Self {
         Self::VOICE_START_ADDR.set(self.start_address);
         Self::VOICE_REPEAT_ADDR.set(self.start_address);
         Self::VOICE_PITCH.set(0x1000);
