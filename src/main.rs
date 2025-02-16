@@ -2,13 +2,13 @@
 #![no_main]
 #![feature(asm_experimental_arch)]
 
-mod spu;
+mod dma;
 mod common;
 mod helpers;
 
 use core::arch::asm;
 use psx::include_words;
-use spu::SpuUpload;
+use dma::spu::SpuUpload;
 
 #[unsafe(no_mangle)]
 fn main() {

@@ -1,10 +1,13 @@
-use spu_control::{SpuRamTransferMode, SpuControl};
-use spu_status::SpuStatus;
-use core::fmt::Write;
 mod spu_control;
 mod spu_status;
 
-use crate::{common::MemoryCell, helpers::DisplayLogger, write_to_display};
+use spu_control::{SpuRamTransferMode, SpuControl};
+use spu_status::SpuStatus;
+use core::fmt::Write;
+
+use crate::{common::MemoryCell, dma::dma_channel_control::DmaChannelControl, helpers::DisplayLogger, write_to_display};
+
+const ADDRESS_MASK: u32 = 0x00FF_FFFF;
 
 pub struct SpuUpload {
     pub current_address: u32,
@@ -49,24 +52,28 @@ impl SpuUpload {
             ram_transfer_mode != SpuRamTransferMode::DMAWrite
         } {}
 
-        // TODO TEST AREA
-        let main_ptr = data.as_ptr();
-        write_to_display!(logger, "Base: {main_ptr:?}");
+        let data_masked_ptr = data.as_ptr() as u32 & ADDRESS_MASK;
+        write_to_display!(logger, "Addr: {data_masked_ptr:#x}");
+        Self::SPU_DMA_MEMORY_ADDRESS_REG.set(data_masked_ptr);
 
-        for n in data.iter() {
-            let ptr = n as *const u32;
-            let ptr_u32 = ptr as u32;
-            write_to_display!(logger, "Iter: {ptr_u32:?}");
+        // ???
+        // let blocks_by_16b = data.len() >> 4;
+        // let blocks_and_size = (blocks_by_16b << 16) as u32 + 0x10;
+        let blocks_and_size = 0x4000_0001;
+        Self::SPU_DMA_BLOCK_CONTROL_REG.set(blocks_and_size);
+        write_to_display!(logger, "Push: {blocks_and_size:#x}");
+
+        let dma_channel_control = DmaChannelControl::new();
+        let dma_channel_control_raw = dma_channel_control.to_u32();
+        Self::SPU_DMA_CHANNEL_CONTROL_REG.set(dma_channel_control_raw);
+
+        loop {
+            let val = Self::SPU_DMA_MEMORY_ADDRESS_REG.get() & ADDRESS_MASK;
+            write_to_display!(logger, "Addr: {val:#x}");
+
+            let val = Self::SPU_DMA_BLOCK_CONTROL_REG.get() & ADDRESS_MASK;
+            write_to_display!(logger, "Ctrl: {val:#x}");
         }
-
-        let ptr = data.as_ptr();
-
-        write_to_display!(logger, "{ptr:?}");
-
-        Self::SPU_DMA_MEMORY_ADDRESS_REG.set(ptr as u32);
-        Self::SPU_DMA_BLOCK_CONTROL_REG.set(0x1000);
-        Self::SPU_DMA_CHANNEL_CONTROL_REG.set(0x01000201);
-        // TODO END
 
         // TODO: Start DMA4 at CPU Side (blocksize=10h, control=01000201h)
 
