@@ -2,14 +2,12 @@
 #![no_main]
 #![feature(asm_experimental_arch)]
 
+mod spu;
 mod common;
 mod helpers;
-mod spu;
 
 use core::arch::asm;
-
 use psx::include_words;
-
 use spu::SpuUpload;
 
 #[unsafe(no_mangle)]
