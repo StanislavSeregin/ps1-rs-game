@@ -230,7 +230,8 @@ impl<const NUM: u8> Voice<NUM> {
     }
 
     pub fn play(&mut self) -> &Self {
-        let key_on_mask = 1u32 << NUM;
+        let current = Self::KEY_ON.get();
+        let key_on_mask = current | (1u32 << NUM);
         Self::KEY_ON.set(key_on_mask);
 
         self
