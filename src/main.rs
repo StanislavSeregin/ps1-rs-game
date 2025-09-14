@@ -20,7 +20,7 @@ fn main() {
     let font = fb.load_default_font();
     let mut txt = font.new_text_box(txt_offset, res);
 
-    play_sample();
+    play_audio();
     
     loop {
         txt.reset();
@@ -32,11 +32,17 @@ fn main() {
     }
 }
 
-fn play_sample() {
-    let mut spu = SPU::new();
-    spu.load_vag_to_spu_ram(SAMPLE_DATA);
+fn play_audio() {
     let sample_rate: u16 = 0x1000;
     let volume: u16 = 0x3FFF;
-    let mut voice = Voice::<0>::new(spu.sample_addr, sample_rate, volume);
-    voice.play();
+
+    let mut spu = SPU::new();
+    let sample0 = spu.load_sample(SAMPLE_DATA).expect("Failed to load sample");
+    let sample1 = spu.load_sample(SAMPLE_DATA).expect("Failed to load sample");
+
+    let mut voice0 = Voice::<0>::new(sample0.spu_addr, sample_rate, volume);
+    voice0.play();
+
+    let mut voice1 = Voice::<1>::new(sample1.spu_addr, sample_rate, volume);
+    voice1.play();
 }
