@@ -12,12 +12,6 @@ pub struct Sample {
     pub in_use: bool,
 }
 
-impl Sample {
-    pub fn is_active(&self) -> bool {
-        self.in_use
-    }
-}
-
 #[derive(Clone, Copy)]
 struct MemoryBlock {
     start_addr: u16,
@@ -55,13 +49,10 @@ impl SampleManager {
         }
 
         let sample_size = audio_data.len() as u16;
-
         if let Some(addr) = self.find_free_space(sample_size) {
             let id = self.next_id;
             self.next_id += 1;
-
-            self.write_sample_to_spu_ram(addr, audio_data)?;
-
+            self.write_sample_to_spu_ram(addr, audio_data);
             let sample = Sample {
                 id,
                 spu_addr: addr,
@@ -69,24 +60,41 @@ impl SampleManager {
                 in_use: true,
             };
 
-            let block = MemoryBlock {
-                start_addr: addr,
-                size: sample_size,
-                sample_id: Some(id),
-                is_free: false,
-            };
+            if let Some(_) = self.find_reusable_blocks(sample_size) {
+                if addr == self.find_reusable_blocks(sample_size).unwrap() {
+                    self.merge_blocks_for_reuse(addr, id, sample_size);
+                } else {
+                    let reusing_block = self.memory_blocks
+                        .iter_mut()
+                        .filter_map(|b| b.as_mut())
+                        .find(|b| b.start_addr == addr);
+
+                    if let Some(existing_block) = reusing_block {
+                        existing_block.sample_id = Some(id);
+                        existing_block.size = sample_size;
+                        existing_block.is_free = false;
+                    }
+                }
+            } else {
+                let block = MemoryBlock {
+                    start_addr: addr,
+                    size: sample_size,
+                    sample_id: Some(id),
+                    is_free: false,
+                };
+
+                if let Some(free_block_slot) = self.memory_blocks.iter_mut().find(|b| b.is_none()) {
+                    *free_block_slot = Some(block);
+                    self.block_count += 1;
+                } else {
+                    return Err("No free block slots");
+                }
+            }
 
             if let Some(free_slot) = self.loaded_samples.iter_mut().find(|s| s.is_none()) {
                 *free_slot = Some(sample);
             } else {
                 return Err("No free sample slots");
-            }
-
-            if let Some(free_block_slot) = self.memory_blocks.iter_mut().find(|b| b.is_none()) {
-                *free_block_slot = Some(block);
-                self.block_count += 1;
-            } else {
-                return Err("No free block slots");
             }
 
             Ok(sample)
@@ -95,7 +103,114 @@ impl SampleManager {
         }
     }
 
+    fn find_reusable_blocks(&self, required_size: u16) -> Option<u16> {
+        let mut inactive_blocks: [(usize, &MemoryBlock); MAX_SAMPLES] = [
+            (0, &MemoryBlock {
+                start_addr: 0,
+                size: 0,
+                sample_id: None,
+                is_free: true,
+            });
+            MAX_SAMPLES
+        ];
+
+        let mut inactive_count = 0;
+        for (i, block_opt) in self.memory_blocks.iter().enumerate() {
+            if let Some(block) = block_opt {
+                if let Some(sample_id) = block.sample_id {
+                    if let Some(sample) = self.loaded_samples
+                        .iter()
+                        .filter_map(|s| s.as_ref())
+                        .find(|s| s.id == sample_id) {
+                        if !sample.in_use && inactive_count < MAX_SAMPLES {
+                            inactive_blocks[inactive_count] = (i, block);
+                            inactive_count += 1;
+                        }
+                    }
+                }
+            }
+        }
+
+        for i in 0..inactive_count {
+            for j in 0..(inactive_count - 1 - i) {
+                if inactive_blocks[j].1.start_addr > inactive_blocks[j + 1].1.start_addr {
+                    inactive_blocks.swap(j, j + 1);
+                }
+            }
+        }
+
+        for start_idx in 0..inactive_count {
+            let mut total_size = inactive_blocks[start_idx].1.size;
+            let start_addr = inactive_blocks[start_idx].1.start_addr;
+            let mut current_end = start_addr + total_size;
+
+            for next_idx in (start_idx + 1)..inactive_count {
+                let next_block = inactive_blocks[next_idx].1;
+                if next_block.start_addr == current_end {
+                    total_size += next_block.size;
+                    current_end = next_block.start_addr + next_block.size;
+                    if total_size >= required_size {
+                        return Some(start_addr);
+                    }
+                } else {
+                    break;
+                }
+            }
+
+            if total_size >= required_size {
+                return Some(start_addr);
+            }
+        }
+
+        None
+    }
+
+    fn merge_blocks_for_reuse(&mut self, start_addr: u16, new_sample_id: u16, new_sample_size: u16) {
+        let mut blocks_to_remove = [0usize; MAX_SAMPLES];
+        let mut remove_count = 0;
+        let mut first_block_index = None;
+        for (i, block_opt) in self.memory_blocks.iter().enumerate() {
+            if let Some(block) = block_opt {
+                if block.start_addr >= start_addr {
+                    if let Some(sample_id) = block.sample_id {
+                        if let Some(sample) = self.loaded_samples
+                            .iter()
+                            .filter_map(|s| s.as_ref())
+                            .find(|s| s.id == sample_id) {
+                            if !sample.in_use && block.start_addr < start_addr + new_sample_size {
+                                if first_block_index.is_none() && block.start_addr == start_addr {
+                                    first_block_index = Some(i);
+                                } else if remove_count < MAX_SAMPLES {
+                                    blocks_to_remove[remove_count] = i;
+                                    remove_count += 1;
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+        }
+
+        for i in 0..remove_count {
+            let index = blocks_to_remove[i];
+            self.memory_blocks[index] = None;
+            self.block_count -= 1;
+        }
+
+        if let Some(index) = first_block_index {
+            if let Some(first_block) = &mut self.memory_blocks[index] {
+                first_block.sample_id = Some(new_sample_id);
+                first_block.size = new_sample_size;
+                first_block.is_free = false;
+            }
+        }
+    }
+
     fn find_free_space(&mut self, required_size: u16) -> Option<u16> {
+        if let Some(addr) = self.find_reusable_blocks(required_size) {
+            return Some(addr);
+        }
+
         let end_addr = (SPU_RAM_START as u32).saturating_add(SPU_RAM_SIZE);
         if (self.next_addr as u32).saturating_add(required_size as u32) <= end_addr {
             let addr = self.next_addr;
@@ -106,10 +221,9 @@ impl SampleManager {
         }
     }
 
-    fn write_sample_to_spu_ram(&self, addr: u16, audio_data: &[u8]) -> Result<(), &'static str> {
+    fn write_sample_to_spu_ram(&self, addr: u16, audio_data: &[u8]) {
         Self::SPU_RAM_DATA_TRANSFER_ADDR.set(addr);
         Self::SPU_RAM_DATA_TRANSFER_CONTROL.set(0x0004);
-
         for chunk in audio_data.chunks(2) {
             if chunk.len() == 2 {
                 let word = (chunk[1] as u16) << 8 | chunk[0] as u16;
@@ -119,8 +233,6 @@ impl SampleManager {
                 Self::SPU_RAM_DATA_TRANSFER_FIFO.set(word);
             }
         }
-
-        Ok(())
     }
 
     pub fn deactivate(&mut self, sample: &Sample) {
