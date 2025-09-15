@@ -7,22 +7,36 @@ use crate::{common::MemoryCell};
 pub use self::sampler::*;
 pub use self::voice::*;
 
-pub struct SPU {
+static mut ALREARY_INITIALIZED: bool = false;
+
+pub struct Spu {
     pub sampler: Sampler,
 }
 
-impl SPU {
+impl Spu {
     const SPU_CONTROL: MemoryCell<u16> = MemoryCell::new(0x1F80_1DAA);
     const SPU_MAIN_VOL_LEFT: MemoryCell<u32> = MemoryCell::new(0x1F80_1D80);
     const SPU_MAIN_VOL_RIGHT: MemoryCell<u32> = MemoryCell::new(0x1F80_1D82);
 
-    pub fn new() -> Self {
+    pub fn take() -> Option<Self> {
+        if unsafe { ALREARY_INITIALIZED } {
+            return None;
+        }
+
+        unsafe {
+            ALREARY_INITIALIZED = true;
+        }
+
+        Some(Spu::new())
+    }
+
+    fn new() -> Self {
         Self::SPU_CONTROL.set(0xC000);
         Self::SPU_CONTROL.set(0xC001);
         Self::SPU_MAIN_VOL_LEFT.set(0x3FFF);
         Self::SPU_MAIN_VOL_RIGHT.set(0x3FFF);
 
-        SPU {
+        Spu {
             sampler: Sampler::new(),
         }
     }

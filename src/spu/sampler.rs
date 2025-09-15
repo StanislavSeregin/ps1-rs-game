@@ -39,7 +39,7 @@ impl Sampler {
     const SPU_RAM_DATA_TRANSFER_FIFO: MemoryCell<u16> = MemoryCell::new(0x1F80_1DA8);
     const SPU_RAM_DATA_TRANSFER_CONTROL: MemoryCell<u16> = MemoryCell::new(0x1F80_1DAC);
 
-    pub fn new() -> Self {
+    pub(super) const fn new() -> Self {
         Sampler {
             next_id: 1,
             memory_blocks: [None; MAX_SAMPLES],
