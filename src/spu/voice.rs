@@ -13,20 +13,11 @@ impl<const NUM: u8> Voice<NUM> {
     const KEY_ON: MemoryCell<u32> = MemoryCell::new(0x1F80_1D88);
 
     pub fn new(spu_addr: u16, sample_rate: u16, volume: u16) -> Self {
-        // Установить громкость каналов
         Self::LEFT_VOL.set(volume);
         Self::RIGHT_VOL.set(volume);
-
-        // Установить адрес начала семпла (в единицах по 8 байт)
         Self::START_ADDR.set(spu_addr);
-
-        // Установить адрес повтора (тот же что и начальный для зацикливания)
         Self::REPEAT_ADDR.set(spu_addr);
-
-        // Установить частоту дискретизации
         Self::SAMPLE_RATE.set(sample_rate);
-
-        // Настроить ADSR (быстрая атака, медленное затухание, высокий sustain, медленный release)
         Self::ADSR.set(0x80FF_8000);
 
         Voice

@@ -118,8 +118,6 @@ impl SampleManager {
                 let word = chunk[0] as u16;
                 Self::SPU_RAM_DATA_TRANSFER_FIFO.set(word);
             }
-
-            for _ in 0..10 {/* Nothing */}
         }
 
         Ok(())
