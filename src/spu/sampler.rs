@@ -26,7 +26,7 @@ struct MemoryBlock {
     is_free: bool,
 }
 
-pub struct SampleManager {
+pub struct Sampler {
     next_id: u16,
     memory_blocks: [Option<MemoryBlock>; MAX_SAMPLES],
     loaded_samples: [Option<Sample>; MAX_SAMPLES],
@@ -34,13 +34,13 @@ pub struct SampleManager {
     block_count: usize,
 }
 
-impl SampleManager {
+impl Sampler {
     const SPU_RAM_DATA_TRANSFER_ADDR: MemoryCell<u16> = MemoryCell::new(0x1F80_1DA6);
     const SPU_RAM_DATA_TRANSFER_FIFO: MemoryCell<u16> = MemoryCell::new(0x1F80_1DA8);
     const SPU_RAM_DATA_TRANSFER_CONTROL: MemoryCell<u16> = MemoryCell::new(0x1F80_1DAC);
 
     pub fn new() -> Self {
-        SampleManager {
+        Sampler {
             next_id: 1,
             memory_blocks: [None; MAX_SAMPLES],
             loaded_samples: [None; MAX_SAMPLES],

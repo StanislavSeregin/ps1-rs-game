@@ -1,14 +1,14 @@
 mod macros;
-mod sample_manager;
+mod sampler;
 mod voice;
 
 use crate::{common::MemoryCell};
 
-pub use self::sample_manager::*;
+pub use self::sampler::*;
 pub use self::voice::*;
 
 pub struct SPU {
-    pub sample_manager: SampleManager,
+    pub sampler: Sampler,
 }
 
 impl SPU {
@@ -23,7 +23,7 @@ impl SPU {
         Self::SPU_MAIN_VOL_RIGHT.set(0x3FFF);
 
         SPU {
-            sample_manager: SampleManager::new(),
+            sampler: Sampler::new(),
         }
     }
 }

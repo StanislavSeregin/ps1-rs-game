@@ -22,7 +22,7 @@ fn main() {
     let mut txt = font.new_text_box(txt_offset, res);
 
     let mut spu = SPU::new();
-    let sample = spu.sample_manager.load(SAMPLE_DATA).expect("Failed to load sample");
+    let sample = spu.sampler.load(SAMPLE_DATA).expect("Failed to load sample");
     let mut voice = sample.bind_to_voice::<0>(0x1000, 0x3FFF);
     voice.play();
     
