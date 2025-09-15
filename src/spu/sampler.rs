@@ -241,7 +241,7 @@ impl Sampler {
         }
     }
 
-    pub fn deactivate(&mut self, sample: &Sample) {
+    pub fn deactivate(&mut self, sample: Sample) {
         if let Some(loaded_sample) = self.loaded_samples
             .iter_mut()
             .filter_map(|s| s.as_mut())

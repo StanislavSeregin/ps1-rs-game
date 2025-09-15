@@ -9,7 +9,9 @@ use psx::{dprintln, Framebuffer};
 
 use crate::spu::{Spu};
 
-const SAMPLE_DATA: &[u8] = include_bytes_skip_vag_header!("../samples/3dfx.vag");
+const SAMPLE_DATA_1: &[u8] = include_bytes_skip_take!("../samples/file_all.spu", 0, 13500);
+const SAMPLE_DATA_2: &[u8] = include_bytes_skip_take!("../samples/file_all.spu", 13600, 8400);
+const SAMPLE_DATA_3: &[u8] = include_bytes_skip_take!("../samples/file_all.spu", 22000);
 
 #[unsafe(no_mangle)]
 fn main() {
@@ -22,13 +24,13 @@ fn main() {
     let mut txt = font.new_text_box(txt_offset, res);
 
     let mut spu = Spu::take().expect("Failed to init SPU");
-    let sample = spu.sampler.load(SAMPLE_DATA).expect("Failed to load sample");
-    let mut voice = sample.bind_to_voice::<0>(0x1000, 0x3FFF);
+    let sample = spu.sampler.load(SAMPLE_DATA_3).expect("Failed to load sample");
+    let mut voice = sample.bind_to_voice::<0>(0x300, 0x3FFF);
     voice.play();
     
     loop {
         txt.reset();
-        dprintln!(txt, "Audio Playing: 3dfx.vag");
+        dprintln!(txt, "Audio Playing");
         
         fb.draw_sync();
         fb.wait_vblank();
