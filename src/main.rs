@@ -7,7 +7,7 @@ mod spu;
 use psx::gpu::VideoMode;
 use psx::{dprintln, Framebuffer};
 
-use crate::spu::{SPU, Voice};
+use crate::spu::{SPU};
 
 const SAMPLE_DATA: &[u8] = include_bytes_skip_vag_header!("../samples/3dfx.vag");
 
@@ -22,9 +22,9 @@ fn main() {
     let mut txt = font.new_text_box(txt_offset, res);
 
     let mut spu = SPU::new();
-    let sample1 = spu.sample_manager.load(SAMPLE_DATA).expect("Failed to load sample");
-    let mut voice1 = Voice::<0>::new(sample1.spu_addr, 0x1000, 0x3FFF);
-    voice1.play();
+    let sample = spu.sample_manager.load(SAMPLE_DATA).expect("Failed to load sample");
+    let mut voice = sample.bind_to_voice::<0>(0x1000, 0x3FFF);
+    voice.play();
     
     loop {
         txt.reset();

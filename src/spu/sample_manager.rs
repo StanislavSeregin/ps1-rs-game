@@ -1,4 +1,4 @@
-use crate::{common::MemoryCell};
+use crate::{common::MemoryCell, spu::Voice};
 
 const MAX_SAMPLES: usize = 64;
 const SPU_RAM_START: u16 = 0x1000;
@@ -10,6 +10,12 @@ pub struct Sample {
     pub spu_addr: u16,
     pub size: u16,
     pub in_use: bool,
+}
+
+impl Sample {
+    pub fn bind_to_voice<const NUM: u8>(self, sample_rate: u16, volume: u16) -> Voice<NUM> {
+        Voice::<NUM>::new(self.spu_addr, sample_rate, volume)
+    }
 }
 
 #[derive(Clone, Copy)]
