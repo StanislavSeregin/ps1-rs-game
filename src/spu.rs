@@ -1,5 +1,23 @@
 use crate::{common::MemoryCell};
 
+#[macro_export]
+macro_rules! include_bytes_skip_vag_header {
+    ($path:expr) => {{
+        const RAW: &[u8] = include_bytes!($path);
+        const LEN: usize = RAW.len() - 48;
+        const DATA: [u8; LEN] = {
+            let mut arr = [0u8; LEN];
+            let mut i = 0;
+            while i < LEN {
+                arr[i] = RAW[i + 48];
+                i += 1;
+            }
+            arr
+        };
+        &DATA
+    }};
+}
+
 const SPU_BASE: usize = 0x1F801C00;
 const SPU_VOICE_LEFT_VOL: usize = SPU_BASE + 0x00;
 const SPU_VOICE_RIGHT_VOL: usize = SPU_BASE + 0x02;
@@ -21,10 +39,6 @@ pub struct Sample {
 }
 
 impl Sample {
-    pub fn deactivate(&mut self) {
-        self.in_use = false;
-    }
-
     pub fn is_active(&self) -> bool {
         self.in_use
     }
@@ -57,12 +71,11 @@ impl SampleManager {
         }
     }
 
-    pub fn load_sample(&mut self, vag_data: &[u8]) -> Result<Sample, &'static str> {
-        if vag_data.len() < 48 {
-            return Err("Invalid VAG data");
+    pub fn load_sample(&mut self, audio_data: &[u8]) -> Result<Sample, &'static str> {
+        if audio_data.is_empty() {
+            return Err("Empty audio data");
         }
 
-        let audio_data = &vag_data[48..];
         let sample_size = audio_data.len() as u16;
 
         if let Some(addr) = self.find_free_space(sample_size) {
@@ -141,11 +154,13 @@ impl SampleManager {
             .find(|s| s.id == id)
     }
 
-    pub fn get_sample_mut(&mut self, id: u16) -> Option<&mut Sample> {
-        self.loaded_samples
+    pub fn deactivate_sample(&mut self, sample: &Sample) {
+        if let Some(loaded_sample) = self.loaded_samples
             .iter_mut()
             .filter_map(|s| s.as_mut())
-            .find(|s| s.id == id)
+            .find(|s| s.id == sample.id) {
+            loaded_sample.in_use = false;
+        }
     }
 }
 
@@ -184,16 +199,16 @@ impl SPU {
         }
     }
 
-    pub fn load_sample(&mut self, vag_data: &[u8]) -> Result<Sample, &'static str> {
-        self.sample_manager.load_sample(vag_data)
+    pub fn load_sample(&mut self, audio_data: &[u8]) -> Result<Sample, &'static str> {
+        self.sample_manager.load_sample(audio_data)
     }
 
     pub fn get_sample(&self, id: u16) -> Option<&Sample> {
         self.sample_manager.get_sample(id)
     }
 
-    pub fn get_sample_mut(&mut self, id: u16) -> Option<&mut Sample> {
-        self.sample_manager.get_sample_mut(id)
+    pub fn deactivate_sample(&mut self, sample: &Sample) {
+        self.sample_manager.deactivate_sample(sample)
     }
 }
 
