@@ -1,11 +1,13 @@
 mod macros;
 mod sampler;
 mod voice;
+pub mod tracker;
 
 use crate::{common::MemoryCell};
 
 pub use self::sampler::*;
 pub use self::voice::*;
+pub use self::tracker::*;
 
 pub struct Spu {
     pub sampler: Sampler,

@@ -11,6 +11,7 @@ impl<const NUM: u8> Voice<NUM> {
     const ADSR: MemoryCell<u32> = MemoryCell::new(0x1F80_1C08 + Self::OFFSET);
     const REPEAT_ADDR: MemoryCell<u16> = MemoryCell::new(0x1F80_1C0E + Self::OFFSET);
     const KEY_ON: MemoryCell<u32> = MemoryCell::new(0x1F80_1D88);
+    const KEY_OFF: MemoryCell<u32> = MemoryCell::new(0x1F80_1D8C);
 
     pub fn new(spu_addr: u16, sample_rate: u16, volume: u16) -> Self {
         Self::LEFT_VOL.set(volume);
@@ -27,6 +28,14 @@ impl<const NUM: u8> Voice<NUM> {
         let current = Self::KEY_ON.get();
         let key_on_mask = current | (1u32 << NUM);
         Self::KEY_ON.set(key_on_mask);
+
+        self
+    }
+
+    pub fn stop(&mut self) -> &Self {
+        let current = Self::KEY_OFF.get();
+        let key_off_mask = current | (1u32 << NUM);
+        Self::KEY_OFF.set(key_off_mask);
 
         self
     }
