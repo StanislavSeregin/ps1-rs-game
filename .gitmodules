@@ -1,3 +1,0 @@
-[submodule "psx-sdk-rs"]
-	path = psx-sdk-rs
-	url = git@github.com:ayrtonm/psx-sdk-rs.git
