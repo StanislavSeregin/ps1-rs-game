@@ -2,5 +2,5 @@
 
 ## Build
 ```sh
-cargo psx build --toolchain nightly-2024-12-21
+cargo psx build --toolchain nightly-2025-05-23
 ```

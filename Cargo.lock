@@ -27,8 +27,7 @@ dependencies = [
 [[package]]
 name = "psx"
 version = "0.1.8"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "5a60d6f7713e5d76bbb5ae11943688c58332bce232113b996128b4c06950ab78"
+source = "git+https://github.com/ayrtonm/psx-sdk-rs?branch=main#8a5175c7908c4e877d573a31404aa95d167a101c"
 
 [[package]]
 name = "ringbuffer"
