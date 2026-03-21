@@ -4,62 +4,83 @@
 
 mod common;
 pub mod runtime;
+pub mod spu2;
 
-use core::cell::UnsafeCell;
 use psx::gpu::VideoMode;
 use psx::{dprintln, Framebuffer};
 use runtime::TaskStack;
+use spu2::*;
 
 // ---------------------------------------------------------------------------
-// Shared state — safe on single-core PSX with cooperative scheduling:
-// only one task is running at any given time, so no data races.
+// Samples — carved from file_all.spu (same offsets as audio-sample branch)
 // ---------------------------------------------------------------------------
 
-struct Shared<T>(UnsafeCell<T>);
-unsafe impl<T> Sync for Shared<T> {}
+const SAMPLE_A: SampleId = SampleId(0);
+const SAMPLE_B: SampleId = SampleId(1);
+const SAMPLE_C: SampleId = SampleId(2);
 
-impl<T> Shared<T> {
-    const fn new(val: T) -> Self {
-        Self(UnsafeCell::new(val))
+const PROJECT: SoundProject<3> = SoundProject {
+    samples: [
+        include_bytes_skip!("../samples/file_all.spu", 0, 13500),
+        include_bytes_skip!("../samples/file_all.spu", 13600, 8400),
+        include_bytes_skip!("../samples/file_all.spu", 22000),
+    ],
+    layout: VoiceLayout::new((0, 16), (16, 8)),
+};
+
+// ---------------------------------------------------------------------------
+// Patterns — two 16-row patterns across 2 channels, 120 BPM
+// ---------------------------------------------------------------------------
+
+const PATTERN_A: Pattern<2, 16> = Pattern::new()
+    .set(0,  0, Cell::note(SAMPLE_A, Pitch(0x1000)))
+    .set(4,  0, Cell::note(SAMPLE_B, Pitch(0x0800)))
+    .set(8,  0, Cell::note(SAMPLE_C, Pitch(0x1200)))
+    .set(12, 0, Cell::note(SAMPLE_A, Pitch(0x0600)))
+    .set(2,  1, Cell::note(SAMPLE_B, Pitch(0x0400)))
+    .set(6,  1, Cell::note(SAMPLE_C, Pitch(0x0900)))
+    .set(10, 1, Cell::note(SAMPLE_A, Pitch(0x1100)))
+    .set(14, 1, Cell::note(SAMPLE_B, Pitch(0x0700)));
+
+const PATTERN_B: Pattern<2, 16> = Pattern::new()
+    .set(0,  0, Cell::note(SAMPLE_C, Pitch(0x0900)))
+    .set(4,  0, Cell::note(SAMPLE_A, Pitch(0x1100)))
+    .set(8,  0, Cell::note(SAMPLE_B, Pitch(0x0600)))
+    .set(12, 0, Cell::note(SAMPLE_C, Pitch(0x1000)))
+    .set(2,  1, Cell::note(SAMPLE_A, Pitch(0x0800)))
+    .set(6,  1, Cell::note(SAMPLE_B, Pitch(0x1200)))
+    .set(10, 1, Cell::note(SAMPLE_C, Pitch(0x0400)))
+    .set(14, 1, Cell::note(SAMPLE_A, Pitch(0x0700)));
+
+// ---------------------------------------------------------------------------
+// Music coroutine — song structure expressed as control flow
+// ---------------------------------------------------------------------------
+
+static MUSIC_STACK: TaskStack<2048> = TaskStack::new();
+
+extern "C" fn music_task() {
+    let mut e = Engine::take().unwrap();
+    e.load_project(&PROJECT);
+    e.set_bpm(30);
+
+    loop {
+        e.reset_pattern_counter();
+        // Pattern A twice, then Pattern B twice — forever
+        e.play_pattern(&PATTERN_A);
+        e.play_pattern(&PATTERN_A);
+        e.play_pattern(&PATTERN_B);
+        e.play_pattern(&PATTERN_B);
     }
-    fn as_ptr(&self) -> *mut T {
-        self.0.get()
-    }
 }
-
-// Task 1 intermediate results
-struct FibState {
-    n: u32,
-    value: u32,
-}
-
-// Task 2 intermediate results
-struct PrimeState {
-    checked: u32,
-    count: u32,
-    last_prime: u32,
-}
-
-static FIB_STATE: Shared<FibState> = Shared::new(FibState { n: 0, value: 0 });
-static PRIME_STATE: Shared<PrimeState> = Shared::new(PrimeState {
-    checked: 1,
-    count: 0,
-    last_prime: 0,
-});
-
-// 4 KiB stack per coroutine (1024 × 4 bytes)
-static FIB_STACK: TaskStack<1024> = TaskStack::new();
-static PRIME_STACK: TaskStack<1024> = TaskStack::new();
 
 // ---------------------------------------------------------------------------
-// Entry point — task 0 (rendering)
+// Entry point — task 0 (rendering + game logic)
 // ---------------------------------------------------------------------------
 
 #[unsafe(no_mangle)]
 fn main() {
     runtime::init();
-    runtime::spawn(fib_task, &FIB_STACK);
-    runtime::spawn(prime_task, &PRIME_STACK);
+    runtime::spawn(music_task, &MUSIC_STACK);
 
     let buf0 = (0, 0);
     let buf1 = (0, 240);
@@ -75,19 +96,14 @@ fn main() {
         txt.reset();
         frame += 1;
 
-        let fib = unsafe { &*FIB_STATE.as_ptr() };
-        let primes = unsafe { &*PRIME_STATE.as_ptr() };
-
-        dprintln!(txt, "Cooperative Multitasking Demo");
-        dprintln!(txt, "----------------------------");
+        let status = audio_status();
+        dprintln!(txt, "SPU2 Engine Demo");
+        dprintln!(txt, "----------------");
         dprintln!(txt, "");
-        dprintln!(txt, "Coroutine 1  Fibonacci");
-        dprintln!(txt, "  fib({}) = {}", fib.n, fib.value);
-        dprintln!(txt, "");
-        dprintln!(txt, "Coroutine 2  Prime counter");
-        dprintln!(txt, "  checked up to: {}", primes.checked);
-        dprintln!(txt, "  primes found:  {}", primes.count);
-        dprintln!(txt, "  last prime:    {}", primes.last_prime);
+        dprintln!(txt, "Music coroutine");
+        dprintln!(txt, "  status:  {}", if status.playing { "Playing" } else { "Stopped" });
+        dprintln!(txt, "  pattern: {}", status.current_pattern);
+        dprintln!(txt, "  row:     {}", status.current_row);
         dprintln!(txt, "");
         dprintln!(txt, "Render loop");
         dprintln!(txt, "  frame: {}", frame);
@@ -97,85 +113,4 @@ fn main() {
         fb.wait_vblank();
         fb.swap();
     }
-}
-
-// ---------------------------------------------------------------------------
-// Task 1 — Fibonacci sequence (yields after each step)
-// ---------------------------------------------------------------------------
-
-extern "C" fn fib_task() {
-    let mut a: u32 = 0;
-    let mut b: u32 = 1;
-    let mut n: u32 = 0;
-
-    loop {
-        unsafe {
-            let state = &mut *FIB_STATE.as_ptr();
-            state.n = n;
-            state.value = a;
-        }
-
-        let next = a.wrapping_add(b);
-        a = b;
-        b = next;
-        n += 1;
-
-        if n >= 48 {
-            a = 0;
-            b = 1;
-            n = 0;
-        }
-
-        runtime::yield_now();
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Task 2 — Prime counter (yields every batch of candidates)
-// ---------------------------------------------------------------------------
-
-extern "C" fn prime_task() {
-    let mut count: u32 = 0;
-    let mut last_prime: u32 = 0;
-    let mut n: u32 = 2;
-
-    loop {
-        if is_prime(n) {
-            count += 1;
-            last_prime = n;
-        }
-
-        unsafe {
-            let state = &mut *PRIME_STATE.as_ptr();
-            state.checked = n;
-            state.count = count;
-            state.last_prime = last_prime;
-        }
-
-        n += 1;
-
-        if n % 50 == 0 {
-            runtime::yield_now();
-        }
-    }
-}
-
-fn is_prime(n: u32) -> bool {
-    if n < 2 {
-        return false;
-    }
-    if n < 4 {
-        return true;
-    }
-    if n % 2 == 0 {
-        return false;
-    }
-    let mut i = 3u32;
-    while i <= n / i {
-        if n % i == 0 {
-            return false;
-        }
-        i += 2;
-    }
-    true
 }
