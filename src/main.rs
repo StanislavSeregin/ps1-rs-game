@@ -16,14 +16,10 @@ use spu2::*;
 // ---------------------------------------------------------------------------
 
 const SAMPLE_A: SampleId = SampleId(0);
-const SAMPLE_B: SampleId = SampleId(1);
-const SAMPLE_C: SampleId = SampleId(2);
 
-const PROJECT: SoundProject<3> = SoundProject {
+const PROJECT: SoundProject<1> = SoundProject {
     samples: [
-        include_bytes_skip!("../samples/file_all.spu", 0, 13500),
-        include_bytes_skip!("../samples/file_all.spu", 13600, 8400),
-        include_bytes_skip!("../samples/file_all.spu", 22000),
+        include_vag!("../samples/hey.vag")
     ],
     layout: VoiceLayout::new((0, 16), (16, 8)),
 };
@@ -33,24 +29,17 @@ const PROJECT: SoundProject<3> = SoundProject {
 // ---------------------------------------------------------------------------
 
 const PATTERN_A: Pattern<2, 16> = Pattern::new()
-    .set(0,  0, Cell::note(SAMPLE_A, Pitch(0x1000)))
-    .set(4,  0, Cell::note(SAMPLE_B, Pitch(0x0800)))
-    .set(8,  0, Cell::note(SAMPLE_C, Pitch(0x1200)))
-    .set(12, 0, Cell::note(SAMPLE_A, Pitch(0x0600)))
-    .set(2,  1, Cell::note(SAMPLE_B, Pitch(0x0400)))
-    .set(6,  1, Cell::note(SAMPLE_C, Pitch(0x0900)))
-    .set(10, 1, Cell::note(SAMPLE_A, Pitch(0x1100)))
-    .set(14, 1, Cell::note(SAMPLE_B, Pitch(0x0700)));
+    .set(0, 0, Cell::note(SAMPLE_A, Pitch(0x500)))
+    .set(0, 1, Cell::note(SAMPLE_A, Pitch(0x1000)))
 
-const PATTERN_B: Pattern<2, 16> = Pattern::new()
-    .set(0,  0, Cell::note(SAMPLE_C, Pitch(0x0900)))
-    .set(4,  0, Cell::note(SAMPLE_A, Pitch(0x1100)))
-    .set(8,  0, Cell::note(SAMPLE_B, Pitch(0x0600)))
-    .set(12, 0, Cell::note(SAMPLE_C, Pitch(0x1000)))
-    .set(2,  1, Cell::note(SAMPLE_A, Pitch(0x0800)))
-    .set(6,  1, Cell::note(SAMPLE_B, Pitch(0x1200)))
-    .set(10, 1, Cell::note(SAMPLE_C, Pitch(0x0400)))
-    .set(14, 1, Cell::note(SAMPLE_A, Pitch(0x0700)));
+    .set(4, 0, Cell::note(SAMPLE_A, Pitch(0x600)))
+    .set(4, 1, Cell::note(SAMPLE_A, Pitch(0x1200)))
+
+    .set(8, 0, Cell::note(SAMPLE_A, Pitch(0x400)))
+    .set(8, 1, Cell::note(SAMPLE_A, Pitch(0x800)))
+
+    .set(12, 0, Cell::note(SAMPLE_A, Pitch(0x500)))
+    .set(12, 1, Cell::note(SAMPLE_A, Pitch(0x1000)));
 
 // ---------------------------------------------------------------------------
 // Music coroutine — song structure expressed as control flow
@@ -61,15 +50,12 @@ static MUSIC_STACK: TaskStack<2048> = TaskStack::new();
 extern "C" fn music_task() {
     let mut e = Engine::take().unwrap();
     e.load_project(&PROJECT);
-    e.set_bpm(30);
+    e.set_bpm(140);
 
     loop {
         e.reset_pattern_counter();
         // Pattern A twice, then Pattern B twice — forever
         e.play_pattern(&PATTERN_A);
-        e.play_pattern(&PATTERN_A);
-        e.play_pattern(&PATTERN_B);
-        e.play_pattern(&PATTERN_B);
     }
 }
 

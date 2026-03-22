@@ -69,6 +69,16 @@ impl VoiceAlloc {
         self.music_mask &= !(1u32 << voice.id());
     }
 
+    /// Return a music voice to the pool without writing KEY_OFF.
+    ///
+    /// Returns the voice's bit mask so the caller can batch all
+    /// KEY_OFF writes into a single register store.
+    pub fn release_music_deferred(&mut self, voice: &VoiceHw) -> u32 {
+        let bit = 1u32 << voice.id();
+        self.music_mask &= !bit;
+        bit
+    }
+
     /// Claim the first free SFX voice, or `None` if all are in use.
     pub fn claim_sfx(&mut self) -> Option<VoiceHw> {
         Self::claim_from_group(self.layout.sfx_start, self.layout.sfx_count, &mut self.sfx_mask)

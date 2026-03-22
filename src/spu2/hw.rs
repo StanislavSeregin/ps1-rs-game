@@ -63,13 +63,21 @@ impl VoiceHw {
         SPU_KEY_OFF.set(1u32 << self.0);
     }
 
-    /// Configure and trigger a sample in one call.
-    pub fn trigger(&self, spu_addr: u16, pitch: u16, volume: u16, adsr: u32) {
+    /// Configure voice registers without triggering key-on.
+    ///
+    /// Use this when batching multiple voice triggers into a single
+    /// `key_on_mask` write to avoid the SPU latch race.
+    pub fn prepare(&self, spu_addr: u16, pitch: u16, volume: u16, adsr: u32) {
         self.set_volume(volume, volume);
         self.set_sample_addr(spu_addr);
         self.set_repeat_addr(spu_addr);
         self.set_pitch(pitch);
         self.set_adsr(adsr);
+    }
+
+    /// Configure and trigger a sample in one call.
+    pub fn trigger(&self, spu_addr: u16, pitch: u16, volume: u16, adsr: u32) {
+        self.prepare(spu_addr, pitch, volume, adsr);
         self.key_on();
     }
 }

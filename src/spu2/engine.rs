@@ -184,13 +184,27 @@ impl Engine {
         pattern: &Pattern<CH, ROWS>,
         row: usize,
     ) {
+        let mut key_on: u32 = 0;
+        let mut key_off: u32 = 0;
+
         for ch in 0..CH {
             let cell = &pattern.cells[row][ch];
-            self.apply_cell(ch, cell);
+            let (on, off) = self.apply_cell(ch, cell);
+            key_on |= on;
+            key_off |= off;
+        }
+
+        if key_off != 0 {
+            hw::key_off_mask(key_off);
+        }
+        if key_on != 0 {
+            hw::key_on_mask(key_on);
         }
     }
 
-    fn apply_cell(&mut self, ch: usize, cell: &Cell) {
+    /// Process one cell and return `(key_on_mask, key_off_mask)` bits
+    /// so the caller can batch all SPU register writes.
+    fn apply_cell(&mut self, ch: usize, cell: &Cell) -> (u32, u32) {
         if matches!(
             cell,
             Cell {
@@ -200,38 +214,47 @@ impl Engine {
                 effect: Effect::None,
             }
         ) {
-            return;
+            return (0, 0);
         }
 
         if let (Some(sample_id), Some(pitch)) = (cell.sample, cell.pitch) {
             if pitch.0 == 0 {
-                if let Some(voice) = self.channel_voices[ch].take() {
-                    self.voices.release_music(&voice);
-                }
-                return;
+                let off = if let Some(voice) = self.channel_voices[ch].take() {
+                    self.voices.release_music_deferred(&voice)
+                } else {
+                    0
+                };
+                return (0, off);
             }
 
             let sample_ref = match self.samples.get(sample_id) {
                 Some(s) => s,
-                None => return,
+                None => return (0, 0),
             };
 
-            if let Some(old) = self.channel_voices[ch].take() {
-                self.voices.release_music(&old);
-            }
+            let off = if let Some(old) = self.channel_voices[ch].take() {
+                self.voices.release_music_deferred(&old)
+            } else {
+                0
+            };
 
             let voice = match self.voices.claim_music() {
                 Some(v) => v,
-                None => return,
+                None => return (0, off),
             };
 
             let vol = cell.volume.unwrap_or(Volume::MAX).0;
-            voice.trigger(sample_ref.spu_addr, pitch.0, vol, DEFAULT_ADSR);
+            voice.prepare(sample_ref.spu_addr, pitch.0, vol, DEFAULT_ADSR);
+            let on = 1u32 << voice.id();
             self.channel_voices[ch] = Some(voice);
+            (on, off)
         } else if let Some(vol) = cell.volume {
             if let Some(voice) = &self.channel_voices[ch] {
                 voice.set_volume(vol.0, vol.0);
             }
+            (0, 0)
+        } else {
+            (0, 0)
         }
     }
 
