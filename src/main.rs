@@ -5,68 +5,16 @@
 mod common;
 pub mod runtime;
 pub mod spu2;
+mod song;
 
 use psx::gpu::VideoMode;
 use psx::{dprintln, Framebuffer};
-use runtime::TaskStack;
-use spu2::*;
-
-// ---------------------------------------------------------------------------
-// Samples — carved from file_all.spu (same offsets as audio-sample branch)
-// ---------------------------------------------------------------------------
-
-const SAMPLE_A: SampleId = SampleId(0);
-
-const PROJECT: SoundProject<1> = SoundProject {
-    samples: [
-        include_vag!("../samples/hey.vag")
-    ],
-    layout: VoiceLayout::new((0, 16), (16, 8)),
-};
-
-// ---------------------------------------------------------------------------
-// Patterns — two 16-row patterns across 2 channels, 120 BPM
-// ---------------------------------------------------------------------------
-
-const PATTERN_A: Pattern<2, 16> = Pattern::new()
-    .set(0, 0, Cell::note(SAMPLE_A, Pitch(0x500)))
-    .set(0, 1, Cell::note(SAMPLE_A, Pitch(0x1000)))
-
-    .set(4, 0, Cell::note(SAMPLE_A, Pitch(0x600)))
-    .set(4, 1, Cell::note(SAMPLE_A, Pitch(0x1200)))
-
-    .set(8, 0, Cell::note(SAMPLE_A, Pitch(0x400)))
-    .set(8, 1, Cell::note(SAMPLE_A, Pitch(0x800)))
-
-    .set(12, 0, Cell::note(SAMPLE_A, Pitch(0x500)))
-    .set(12, 1, Cell::note(SAMPLE_A, Pitch(0x1000)));
-
-// ---------------------------------------------------------------------------
-// Music coroutine — song structure expressed as control flow
-// ---------------------------------------------------------------------------
-
-static MUSIC_STACK: TaskStack<2048> = TaskStack::new();
-
-extern "C" fn music_task() {
-    let mut e = Engine::take().unwrap();
-    e.load_project(&PROJECT);
-    e.set_bpm(140);
-
-    loop {
-        e.reset_pattern_counter();
-        // Pattern A twice, then Pattern B twice — forever
-        e.play_pattern(&PATTERN_A);
-    }
-}
-
-// ---------------------------------------------------------------------------
-// Entry point — task 0 (rendering + game logic)
-// ---------------------------------------------------------------------------
+use spu2::audio_status;
 
 #[unsafe(no_mangle)]
 fn main() {
     runtime::init();
-    runtime::spawn(music_task, &MUSIC_STACK);
+    runtime::spawn(song::music_task, &song::MUSIC_STACK);
 
     let buf0 = (0, 0);
     let buf1 = (0, 240);
