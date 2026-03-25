@@ -1,6 +1,7 @@
 use super::bus::{self, AudioStatus, Command};
 use super::hw::{self, VoiceHw};
 use super::music::{Cell, Effect, Pattern, PatternSource, Pitch, Song, SoundProject, Volume};
+use super::reverb::ReverbConfig;
 use super::sample::{SampleBank, SampleId};
 use super::voice::{VoiceAlloc, VoiceLayout};
 use crate::runtime;
@@ -56,6 +57,10 @@ pub struct Engine {
     pattern_counter: u16,
     last_hblank: u16,
     channel_voices: [Option<VoiceHw>; 24],
+    /// Per-tracker-channel reverb enable (bit N = channel N feeds reverb).
+    channel_reverb: u32,
+    /// Current hardware EON mask — tracks which active voices have reverb.
+    reverb_voice_mask: u32,
 }
 
 impl Engine {
@@ -80,6 +85,8 @@ impl Engine {
             pattern_counter: 0,
             last_hblank: hw::read_hblank_counter(),
             channel_voices: [None; 24],
+            channel_reverb: 0,
+            reverb_voice_mask: 0,
         })
     }
 
@@ -108,17 +115,13 @@ impl Engine {
     /// Play a multi-track song. All tracks advance in lockstep; each
     /// track's current pattern is layered simultaneously.
     ///
-    /// Track *i* occupies voice channels `i*CH .. (i+1)*CH`.
+    /// All tracks share the global channel namespace — use distinct
+    /// channel indices in each track's patterns to avoid collisions.
     /// Playback continues until the longest track's order list is
     /// exhausted or a [`Command::Interrupt`] is received.
-    pub fn play_song<
-        const TRACKS: usize,
-        const CH: usize,
-        const PAT: usize,
-        const ROWS: usize,
-    >(
+    pub fn play_song<const TRACKS: usize, const PAT: usize, const ROWS: usize>(
         &mut self,
-        song: &Song<TRACKS, CH, PAT, ROWS>,
+        song: &Song<TRACKS, PAT, ROWS>,
     ) {
         self.bpm = song.bpm;
         self.interrupted = false;
@@ -146,14 +149,9 @@ impl Engine {
         });
     }
 
-    fn play_song_position<
-        const TRACKS: usize,
-        const CH: usize,
-        const PAT: usize,
-        const ROWS: usize,
-    >(
+    fn play_song_position<const TRACKS: usize, const PAT: usize, const ROWS: usize>(
         &mut self,
-        song: &Song<TRACKS, CH, PAT, ROWS>,
+        song: &Song<TRACKS, PAT, ROWS>,
         pos: usize,
     ) -> WaitResult {
         for row in 0..ROWS {
@@ -166,7 +164,7 @@ impl Engine {
             let mut key_on: u32 = 0;
             let mut key_off: u32 = 0;
 
-            for (track_idx, track) in song.tracks.iter().enumerate() {
+            for track in song.tracks.iter() {
                 if pos >= track.order_len {
                     continue;
                 }
@@ -174,16 +172,19 @@ impl Engine {
                 if pat_idx >= PAT {
                     continue;
                 }
-                let ch_offset = track_idx * CH;
-                for ch in 0..CH {
-                    let cell = &track.patterns[pat_idx].cells[row][ch];
-                    let (on, off) = self.apply_cell(ch_offset + ch, cell);
-                    key_on |= on;
-                    key_off |= off;
+                let pat = &track.patterns[pat_idx];
+                for i in 0..pat.event_count() {
+                    let ev = pat.event(i);
+                    if ev.row as usize == row {
+                        let (on, off) = self.apply_cell(ev.ch as usize, &ev.cell);
+                        key_on |= on;
+                        key_off |= off;
+                    }
                 }
             }
 
             Self::flush_keys(key_on, key_off);
+            self.flush_reverb();
 
             if self.wait_row().interrupted() {
                 return WaitResult::Interrupted;
@@ -197,9 +198,9 @@ impl Engine {
     /// The engine maintains a running pattern counter so that
     /// [`audio_status()`](super::bus::audio_status) reports meaningful
     /// positions even when patterns are played individually via control flow.
-    pub fn play_pattern<const CH: usize, const ROWS: usize>(
+    pub fn play_pattern<const ROWS: usize>(
         &mut self,
-        pattern: &Pattern<CH, ROWS>,
+        pattern: &Pattern<ROWS>,
     ) {
         self.interrupted = false;
         let idx = self.pattern_counter;
@@ -210,10 +211,9 @@ impl Engine {
 
     /// Layer multiple patterns simultaneously, then release music voices.
     ///
-    /// Each pattern gets consecutive channel slots: pattern 0 starts at
-    /// channel 0, pattern 1 at `pat0.channels()`, etc.
-    /// Patterns may have different channel counts but **must** share the
-    /// same row count (checked at runtime).
+    /// All patterns share the global channel namespace — channel indices
+    /// in [`set()`](Pattern::set) are used as-is, with no automatic
+    /// offsetting. Patterns **must** share the same row count.
     pub fn play_patterns(&mut self, patterns: &[&dyn PatternSource]) {
         if patterns.is_empty() {
             return;
@@ -225,9 +225,9 @@ impl Engine {
         self.release_music_voices();
     }
 
-    fn play_pattern_inner<const CH: usize, const ROWS: usize>(
+    fn play_pattern_inner<const ROWS: usize>(
         &mut self,
-        pattern: &Pattern<CH, ROWS>,
+        pattern: &Pattern<ROWS>,
         pattern_idx: u16,
     ) -> WaitResult {
         for row in 0..ROWS {
@@ -262,19 +262,20 @@ impl Engine {
 
             let mut key_on: u32 = 0;
             let mut key_off: u32 = 0;
-            let mut ch_offset: usize = 0;
 
             for pat in patterns {
-                for ch in 0..pat.channels() {
-                    let cell = pat.cell(row, ch);
-                    let (on, off) = self.apply_cell(ch_offset + ch, cell);
-                    key_on |= on;
-                    key_off |= off;
+                for i in 0..pat.event_count() {
+                    let ev = pat.event(i);
+                    if ev.row as usize == row {
+                        let (on, off) = self.apply_cell(ev.ch as usize, &ev.cell);
+                        key_on |= on;
+                        key_off |= off;
+                    }
                 }
-                ch_offset += pat.channels();
             }
 
             Self::flush_keys(key_on, key_off);
+            self.flush_reverb();
 
             if self.wait_row().interrupted() {
                 return WaitResult::Interrupted;
@@ -283,22 +284,25 @@ impl Engine {
         WaitResult::Complete
     }
 
-    fn trigger_row<const CH: usize, const ROWS: usize>(
+    fn trigger_row<const ROWS: usize>(
         &mut self,
-        pattern: &Pattern<CH, ROWS>,
+        pattern: &Pattern<ROWS>,
         row: usize,
     ) {
         let mut key_on: u32 = 0;
         let mut key_off: u32 = 0;
 
-        for ch in 0..CH {
-            let cell = &pattern.cells[row][ch];
-            let (on, off) = self.apply_cell(ch, cell);
-            key_on |= on;
-            key_off |= off;
+        for i in 0..pattern.event_count() {
+            let ev = pattern.event(i);
+            if ev.row as usize == row {
+                let (on, off) = self.apply_cell(ev.ch as usize, &ev.cell);
+                key_on |= on;
+                key_off |= off;
+            }
         }
 
         Self::flush_keys(key_on, key_off);
+        self.flush_reverb();
     }
 
     fn flush_keys(key_on: u32, key_off: u32) {
@@ -312,6 +316,9 @@ impl Engine {
 
     /// Process one cell and return `(key_on_mask, key_off_mask)` bits
     /// so the caller can batch all SPU register writes.
+    ///
+    /// Also updates [`reverb_voice_mask`](Self::reverb_voice_mask) according
+    /// to the per-channel reverb flags in [`channel_reverb`](Self::channel_reverb).
     fn apply_cell(&mut self, ch: usize, cell: &Cell) -> (u32, u32) {
         if matches!(
             cell,
@@ -328,6 +335,7 @@ impl Engine {
         if let (Some(sample_id), Some(pitch)) = (cell.sample, cell.pitch) {
             if pitch.0 == 0 {
                 let off = if let Some(voice) = self.channel_voices[ch].take() {
+                    self.reverb_voice_mask &= !(1u32 << voice.id());
                     self.voices.release_music_deferred(&voice)
                 } else {
                     0
@@ -341,6 +349,7 @@ impl Engine {
             };
 
             let off = if let Some(old) = self.channel_voices[ch].take() {
+                self.reverb_voice_mask &= !(1u32 << old.id());
                 self.voices.release_music_deferred(&old)
             } else {
                 0
@@ -353,9 +362,12 @@ impl Engine {
 
             let vol = cell.volume.unwrap_or(Volume::MAX).0;
             voice.prepare(sample_ref.spu_addr, pitch.0, vol, DEFAULT_ADSR);
-            let on = 1u32 << voice.id();
+            let voice_bit = 1u32 << voice.id();
+            if self.channel_reverb & (1u32 << ch) != 0 {
+                self.reverb_voice_mask |= voice_bit;
+            }
             self.channel_voices[ch] = Some(voice);
-            (on, off)
+            (voice_bit, off)
         } else if let Some(vol) = cell.volume {
             if let Some(voice) = &self.channel_voices[ch] {
                 voice.set_volume(vol.0, vol.0);
@@ -364,6 +376,82 @@ impl Engine {
         } else {
             (0, 0)
         }
+    }
+
+    fn flush_reverb(&self) {
+        hw::set_reverb_on_mask(self.reverb_voice_mask);
+    }
+
+    // -----------------------------------------------------------------------
+    // Reverb
+    // -----------------------------------------------------------------------
+
+    /// Configure and enable the SPU reverb unit.
+    ///
+    /// Writes the full reverb register set, clears the work area in SPU RAM,
+    /// and enables reverb master writes. Use [`set_channel_reverb`] to select
+    /// which tracker channels feed into the reverb unit.
+    ///
+    /// `input_vol` scales audio entering the reverb (0..`0x7FFF`).
+    /// `output_vol` scales the wet signal mixed back into the output
+    /// (0..`0x7FFF`). Both are applied symmetrically to L and R.
+    ///
+    /// Must be called **after** [`load_project`](Self::load_project) so that
+    /// the sample address limit is set before any further sample loads.
+    pub fn enable_reverb(&mut self, config: &ReverbConfig, input_vol: u16, output_vol: u16) {
+        hw::disable_reverb_master();
+
+        hw::set_reverb_base(config.buffer_start);
+
+        let buffer_halfwords = (0x1_0000u32 - config.buffer_start as u32) * 4;
+        hw::clear_spu_ram(config.buffer_start, buffer_halfwords);
+
+        hw::write_reverb_config(&config.as_registers());
+        hw::set_reverb_volume_in(input_vol, input_vol);
+        hw::set_reverb_volume_out(output_vol, output_vol);
+
+        self.samples.set_addr_limit(config.buffer_start);
+
+        hw::enable_reverb_master();
+    }
+
+    /// Enable or disable reverb for a single tracker channel.
+    ///
+    /// When enabled, any voice assigned to this channel will have its
+    /// EON (Echo On) bit set automatically. The hardware mask is flushed
+    /// on every row together with key-on/key-off.
+    pub fn set_channel_reverb(&mut self, channel: usize, enabled: bool) {
+        if channel < 24 {
+            if enabled {
+                self.channel_reverb |= 1u32 << channel;
+            } else {
+                self.channel_reverb &= !(1u32 << channel);
+                if let Some(voice) = &self.channel_voices[channel] {
+                    self.reverb_voice_mask &= !(1u32 << voice.id());
+                }
+            }
+        }
+    }
+
+    /// Adjust the reverb input volume (L, R).
+    pub fn set_reverb_input_volume(&self, left: u16, right: u16) {
+        hw::set_reverb_volume_in(left, right);
+    }
+
+    /// Adjust the reverb output (wet) volume (L, R).
+    pub fn set_reverb_output_volume(&self, left: u16, right: u16) {
+        hw::set_reverb_volume_out(left, right);
+    }
+
+    /// Fully disable the reverb unit: mute output, clear voice mask,
+    /// and stop reverb RAM writes.
+    pub fn disable_reverb(&mut self) {
+        hw::set_reverb_volume_out(0, 0);
+        self.channel_reverb = 0;
+        self.reverb_voice_mask = 0;
+        hw::set_reverb_on_mask(0);
+        hw::disable_reverb_master();
+        self.samples.set_addr_limit(u16::MAX);
     }
 
     // -----------------------------------------------------------------------
@@ -456,6 +544,8 @@ impl Engine {
                 Command::StopAll => {
                     self.voices.release_all();
                     self.channel_voices = [None; 24];
+                    self.reverb_voice_mask = 0;
+                    hw::set_reverb_on_mask(0);
                     self.interrupted = true;
                 }
             }
@@ -480,8 +570,10 @@ impl Engine {
     fn release_music_voices(&mut self) {
         for slot in self.channel_voices.iter_mut() {
             if let Some(voice) = slot.take() {
+                self.reverb_voice_mask &= !(1u32 << voice.id());
                 self.voices.release_music(&voice);
             }
         }
+        hw::set_reverb_on_mask(self.reverb_voice_mask);
     }
 }

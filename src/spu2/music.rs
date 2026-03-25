@@ -158,74 +158,105 @@ impl Cell {
     }
 }
 
-/// A pattern: a `ROWS x CHANNELS` grid of [`Cell`]s.
+// ---------------------------------------------------------------------------
+// Event-based Pattern
+// ---------------------------------------------------------------------------
+
+/// Maximum events (non-empty cells) per pattern.
+pub const MAX_EVENTS: usize = 48;
+
+/// One event in a pattern: a [`Cell`] placed at a specific row and
+/// **global** tracker channel.
+#[derive(Clone, Copy)]
+pub struct Event {
+    pub row: u8,
+    pub ch: u8,
+    pub cell: Cell,
+}
+
+impl Event {
+    const EMPTY: Self = Self {
+        row: 0,
+        ch: 0,
+        cell: Cell::EMPTY,
+    };
+}
+
+/// A pattern: a sparse list of [`Event`]s on a timeline of `ROWS` rows.
 ///
-/// Built at compile time via the builder pattern:
+/// Channel indices are **global** tracker channels (0–23).  Multiple
+/// patterns passed to [`play_patterns`] share the same channel namespace —
+/// no automatic offsetting occurs.
+///
 /// ```ignore
-/// const PAT: Pattern<2, 8> = Pattern::new()
-///     .set(0, 0, Cell::note(KICK, Pitch::C4))
-///     .set(4, 1, Cell::note(SNARE, Pitch::D4));
+/// const PAT: Pattern<16> = Pattern::new()
+///     .set(0, 0, Cell::note(HAT,   Pitch(0x1000)))   // row 0, channel 0
+///     .set(0, 1, Cell::note(KICK,  Pitch(0x1000)))   // row 0, channel 1
+///     .set(4, 2, Cell::note(SNARE, Pitch(0x1000)));   // row 4, channel 2
 /// ```
 #[derive(Clone, Copy)]
-pub struct Pattern<const CHANNELS: usize, const ROWS: usize> {
-    pub cells: [[Cell; CHANNELS]; ROWS],
+pub struct Pattern<const ROWS: usize> {
+    events: [Event; MAX_EVENTS],
+    len: u8,
 }
 
-impl<const CH: usize, const ROWS: usize> Pattern<CH, ROWS> {
+impl<const ROWS: usize> Pattern<ROWS> {
     pub const fn new() -> Self {
         Self {
-            cells: [[Cell::EMPTY; CH]; ROWS],
+            events: [Event::EMPTY; MAX_EVENTS],
+            len: 0,
         }
     }
 
-    /// Set a single cell. Returns `self` for chaining.
+    /// Place a cell at (`row`, `ch`).  `ch` is a global tracker channel.
     pub const fn set(mut self, row: usize, ch: usize, cell: Cell) -> Self {
-        if row < ROWS && ch < CH {
-            self.cells[row][ch] = cell;
+        if row < ROWS && (self.len as usize) < MAX_EVENTS {
+            self.events[self.len as usize] = Event {
+                row: row as u8,
+                ch: ch as u8,
+                cell,
+            };
+            self.len += 1;
         }
         self
-    }
-}
-
-impl<const ROWS: usize> Pattern<1, ROWS> {
-    /// Set a cell in a single-channel pattern (no channel index needed).
-    pub const fn set_cell(self, row: usize, cell: Cell) -> Self {
-        self.set(row, 0, cell)
     }
 }
 
 /// Type-erased access to pattern data.
 ///
 /// Allows [`Engine::play_patterns`](super::engine::Engine::play_patterns)
-/// to layer patterns with different channel counts in one call.
-/// Implemented automatically for every `Pattern<CH, ROWS>`.
+/// to layer patterns with different row counts in one call.
 pub trait PatternSource {
     fn rows(&self) -> usize;
-    fn channels(&self) -> usize;
-    fn cell(&self, row: usize, ch: usize) -> &Cell;
+    fn event_count(&self) -> usize;
+    fn event(&self, idx: usize) -> &Event;
 }
 
-impl<const CH: usize, const ROWS: usize> PatternSource for Pattern<CH, ROWS> {
+impl<const ROWS: usize> PatternSource for Pattern<ROWS> {
     fn rows(&self) -> usize { ROWS }
-    fn channels(&self) -> usize { CH }
-    fn cell(&self, row: usize, ch: usize) -> &Cell { &self.cells[row][ch] }
+    fn event_count(&self) -> usize { self.len as usize }
+    fn event(&self, idx: usize) -> &Event { &self.events[idx] }
 }
+
+// ---------------------------------------------------------------------------
+// Song / Track
+// ---------------------------------------------------------------------------
 
 /// Maximum length of a track's pattern order list.
 pub const MAX_ORDER: usize = 64;
 
 /// One layer of a song: a bank of patterns plus an order list.
 ///
-/// `CH` channels per pattern, `PAT` unique patterns, `ROWS` rows per pattern.
-/// Each track occupies `CH` consecutive voice channels during playback.
+/// Each track occupies the same global channel namespace.
+/// Use distinct channel indices across tracks to avoid collisions.
 #[derive(Clone, Copy)]
-pub struct Track<const CH: usize, const PAT: usize, const ROWS: usize> {
-    pub patterns: [Pattern<CH, ROWS>; PAT],
+pub struct Track<const PAT: usize, const ROWS: usize> {
+    pub patterns: [Pattern<ROWS>; PAT],
     pub order: [u8; MAX_ORDER],
     pub order_len: usize,
 }
 
-impl<const CH: usize, const PAT: usize, const ROWS: usize> Track<CH, PAT, ROWS> {
+impl<const PAT: usize, const ROWS: usize> Track<PAT, ROWS> {
     pub const fn new() -> Self {
         Self {
             patterns: [Pattern::new(); PAT],
@@ -234,7 +265,7 @@ impl<const CH: usize, const PAT: usize, const ROWS: usize> Track<CH, PAT, ROWS> 
         }
     }
 
-    pub const fn with_pattern(mut self, idx: usize, pattern: Pattern<CH, ROWS>) -> Self {
+    pub const fn with_pattern(mut self, idx: usize, pattern: Pattern<ROWS>) -> Self {
         if idx < PAT {
             self.patterns[idx] = pattern;
         }
@@ -259,17 +290,16 @@ impl<const CH: usize, const PAT: usize, const ROWS: usize> Track<CH, PAT, ROWS> 
 
 /// A song: multiple tracks playing simultaneously.
 ///
-/// `TRACKS` layers, each with `CH` channels, `PAT` patterns, `ROWS` rows.
-/// Track *i* uses voice channels `i*CH .. (i+1)*CH`.
+/// All tracks share the global channel namespace.
 /// Timing is controlled by `bpm` (1 beat = 4 rows).
 #[derive(Clone, Copy)]
-pub struct Song<const TRACKS: usize, const CH: usize, const PAT: usize, const ROWS: usize> {
-    pub tracks: [Track<CH, PAT, ROWS>; TRACKS],
+pub struct Song<const TRACKS: usize, const PAT: usize, const ROWS: usize> {
+    pub tracks: [Track<PAT, ROWS>; TRACKS],
     pub bpm: u16,
 }
 
-impl<const TRACKS: usize, const CH: usize, const PAT: usize, const ROWS: usize>
-    Song<TRACKS, CH, PAT, ROWS>
+impl<const TRACKS: usize, const PAT: usize, const ROWS: usize>
+    Song<TRACKS, PAT, ROWS>
 {
     pub const fn new(bpm: u16) -> Self {
         Self {
@@ -278,7 +308,7 @@ impl<const TRACKS: usize, const CH: usize, const PAT: usize, const ROWS: usize>
         }
     }
 
-    pub const fn with_track(mut self, idx: usize, track: Track<CH, PAT, ROWS>) -> Self {
+    pub const fn with_track(mut self, idx: usize, track: Track<PAT, ROWS>) -> Self {
         if idx < TRACKS {
             self.tracks[idx] = track;
         }

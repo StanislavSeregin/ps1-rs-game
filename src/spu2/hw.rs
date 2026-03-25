@@ -12,6 +12,18 @@ const SPU_RAM_TRANSFER_ADDR: MemoryCell<u16> = MemoryCell::new(0x1F80_1DA6);
 const SPU_RAM_TRANSFER_FIFO: MemoryCell<u16> = MemoryCell::new(0x1F80_1DA8);
 const SPU_RAM_TRANSFER_CTRL: MemoryCell<u16> = MemoryCell::new(0x1F80_1DAC);
 
+// ---------------------------------------------------------------------------
+// Reverb registers
+// ---------------------------------------------------------------------------
+
+const REVERB_OUT_VOL_LEFT: MemoryCell<u16> = MemoryCell::new(0x1F80_1D84);
+const REVERB_OUT_VOL_RIGHT: MemoryCell<u16> = MemoryCell::new(0x1F80_1D86);
+const SPU_REVERB_ON: MemoryCell<u32> = MemoryCell::new(0x1F80_1D98);
+const SPU_REVERB_BASE: MemoryCell<u16> = MemoryCell::new(0x1F80_1DA2);
+const REVERB_CONFIG_BASE: usize = 0x1F80_1DC0;
+const REVERB_IN_VOL_LEFT: MemoryCell<u16> = MemoryCell::new(0x1F80_1DFC);
+const REVERB_IN_VOL_RIGHT: MemoryCell<u16> = MemoryCell::new(0x1F80_1DFE);
+
 /// Hardware voice handle with runtime index (0..23).
 ///
 /// Unlike the const-generic `Voice<const NUM: u8>` in `spu`,
@@ -118,6 +130,66 @@ pub fn init_spu_hardware() {
     SPU_CONTROL.set(0xC000);
     SPU_CONTROL.set(0xC001);
     set_master_volume(0x3FFF, 0x3FFF);
+    REVERB_OUT_VOL_LEFT.set(0);
+    REVERB_OUT_VOL_RIGHT.set(0);
+}
+
+// ---------------------------------------------------------------------------
+// Reverb hardware access
+// ---------------------------------------------------------------------------
+
+/// Set the reverb work area start address (N×8 byte addressing).
+/// The reverb buffer extends from this address to the end of SPU RAM.
+pub fn set_reverb_base(addr: u16) {
+    SPU_REVERB_BASE.set(addr);
+}
+
+/// Write all 30 reverb configuration registers (`$1F801DC0`–`$1F801DFA`).
+pub fn write_reverb_config(regs: &[u16; 30]) {
+    for (i, &val) in regs.iter().enumerate() {
+        MemoryCell::<u16>::new(REVERB_CONFIG_BASE + i * 2).set(val);
+    }
+}
+
+/// Set reverb input volume (signed 16-bit, scale N / 0x8000).
+pub fn set_reverb_volume_in(left: u16, right: u16) {
+    REVERB_IN_VOL_LEFT.set(left);
+    REVERB_IN_VOL_RIGHT.set(right);
+}
+
+/// Set reverb output volume (signed 16-bit, scale N / 0x8000).
+pub fn set_reverb_volume_out(left: u16, right: u16) {
+    REVERB_OUT_VOL_LEFT.set(left);
+    REVERB_OUT_VOL_RIGHT.set(right);
+}
+
+/// Set which of the 24 voices feed into the reverb unit (bits 0–23).
+pub fn set_reverb_on_mask(mask: u32) {
+    SPU_REVERB_ON.set(mask & 0x00FF_FFFF);
+}
+
+/// Enable reverb RAM writes (SPUCNT bit 7).
+pub fn enable_reverb_master() {
+    let val = SPU_CONTROL.get();
+    SPU_CONTROL.set(val | 0x0080);
+}
+
+/// Disable reverb RAM writes (SPUCNT bit 7).
+/// Note: output volume must also be set to 0 to fully mute reverb.
+pub fn disable_reverb_master() {
+    let val = SPU_CONTROL.get();
+    SPU_CONTROL.set(val & !0x0080);
+}
+
+/// Zero-fill a region of SPU RAM via the manual-write FIFO.
+/// `start` is in N×8 byte addressing; `halfwords` is the number of
+/// 16-bit words to clear.
+pub fn clear_spu_ram(start: u16, halfwords: u32) {
+    SPU_RAM_TRANSFER_ADDR.set(start);
+    SPU_RAM_TRANSFER_CTRL.set(0x0004);
+    for _ in 0..halfwords {
+        SPU_RAM_TRANSFER_FIFO.set(0);
+    }
 }
 
 // ---------------------------------------------------------------------------

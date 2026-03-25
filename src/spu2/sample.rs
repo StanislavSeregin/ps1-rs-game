@@ -21,6 +21,9 @@ pub struct SampleRef {
 pub struct SampleBank<const MAX: usize = 32> {
     slots: [Option<SampleRef>; MAX],
     next_addr: u16,
+    /// Upper address bound (exclusive). Set to the reverb work area start
+    /// when reverb is enabled, preventing sample data from colliding with it.
+    addr_limit: u16,
 }
 
 impl<const MAX: usize> SampleBank<MAX> {
@@ -28,7 +31,14 @@ impl<const MAX: usize> SampleBank<MAX> {
         Self {
             slots: [None; MAX],
             next_addr: SPU_RAM_START,
+            addr_limit: u16::MAX,
         }
+    }
+
+    /// Set the upper address bound to the reverb work area start.
+    /// Pass `u16::MAX` to remove the limit (e.g. when reverb is disabled).
+    pub fn set_addr_limit(&mut self, limit: u16) {
+        self.addr_limit = limit;
     }
 
     /// Load raw audio bytes into SPU RAM and register them under `id`.
@@ -46,7 +56,11 @@ impl<const MAX: usize> SampleBank<MAX> {
 
         let size = data.len() as u16;
         let addr = self.next_addr;
-        self.next_addr = self.next_addr.wrapping_add(size);
+        let end = self.next_addr.wrapping_add(size);
+        if end > self.addr_limit || end < self.next_addr {
+            return Err("sample data would overlap reverb work area");
+        }
+        self.next_addr = end;
 
         hw::transfer_to_spu_ram(addr, data);
 
@@ -67,5 +81,6 @@ impl<const MAX: usize> SampleBank<MAX> {
     pub fn reset(&mut self) {
         self.slots = [None; MAX];
         self.next_addr = SPU_RAM_START;
+        // addr_limit is intentionally preserved across resets
     }
 }
