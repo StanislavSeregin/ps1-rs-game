@@ -8,6 +8,6 @@ pub mod bus;
 
 pub use sample::SampleId;
 pub use voice::VoiceLayout;
-pub use music::{Pitch, Volume, Effect, Cell, Pattern, Song, SoundProject};
+pub use music::{Pitch, Volume, Effect, Cell, Pattern, PatternSource, Track, Song, SoundProject};
 pub use engine::{Engine, WaitResult};
 pub use bus::{send_command, audio_status, Command};

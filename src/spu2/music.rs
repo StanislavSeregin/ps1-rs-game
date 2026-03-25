@@ -187,34 +187,51 @@ impl<const CH: usize, const ROWS: usize> Pattern<CH, ROWS> {
     }
 }
 
-/// Maximum length of a song's pattern order list.
+impl<const ROWS: usize> Pattern<1, ROWS> {
+    /// Set a cell in a single-channel pattern (no channel index needed).
+    pub const fn set_cell(self, row: usize, cell: Cell) -> Self {
+        self.set(row, 0, cell)
+    }
+}
+
+/// Type-erased access to pattern data.
+///
+/// Allows [`Engine::play_patterns`](super::engine::Engine::play_patterns)
+/// to layer patterns with different channel counts in one call.
+/// Implemented automatically for every `Pattern<CH, ROWS>`.
+pub trait PatternSource {
+    fn rows(&self) -> usize;
+    fn channels(&self) -> usize;
+    fn cell(&self, row: usize, ch: usize) -> &Cell;
+}
+
+impl<const CH: usize, const ROWS: usize> PatternSource for Pattern<CH, ROWS> {
+    fn rows(&self) -> usize { ROWS }
+    fn channels(&self) -> usize { CH }
+    fn cell(&self, row: usize, ch: usize) -> &Cell { &self.cells[row][ch] }
+}
+
+/// Maximum length of a track's pattern order list.
 pub const MAX_ORDER: usize = 64;
 
-/// A song: an arrangement of patterns with a BPM setting.
+/// One layer of a song: a bank of patterns plus an order list.
 ///
-/// `CH` channels, `PAT` unique patterns, `ROWS` rows per pattern.
-/// Timing is controlled by a single `bpm` value (1 beat = 4 rows).
+/// `CH` channels per pattern, `PAT` unique patterns, `ROWS` rows per pattern.
+/// Each track occupies `CH` consecutive voice channels during playback.
 #[derive(Clone, Copy)]
-pub struct Song<const CH: usize, const PAT: usize, const ROWS: usize> {
+pub struct Track<const CH: usize, const PAT: usize, const ROWS: usize> {
     pub patterns: [Pattern<CH, ROWS>; PAT],
     pub order: [u8; MAX_ORDER],
     pub order_len: usize,
-    pub bpm: u16,
 }
 
-impl<const CH: usize, const PAT: usize, const ROWS: usize> Song<CH, PAT, ROWS> {
-    pub const fn new(bpm: u16) -> Self {
+impl<const CH: usize, const PAT: usize, const ROWS: usize> Track<CH, PAT, ROWS> {
+    pub const fn new() -> Self {
         Self {
             patterns: [Pattern::new(); PAT],
             order: [0; MAX_ORDER],
             order_len: 0,
-            bpm,
         }
-    }
-
-    pub const fn with_bpm(mut self, bpm: u16) -> Self {
-        self.bpm = bpm;
-        self
     }
 
     pub const fn with_pattern(mut self, idx: usize, pattern: Pattern<CH, ROWS>) -> Self {
@@ -224,8 +241,6 @@ impl<const CH: usize, const PAT: usize, const ROWS: usize> Song<CH, PAT, ROWS> {
         self
     }
 
-    /// Set the pattern order list.
-    /// Accepts a fixed-size array to remain `const`-compatible.
     pub const fn with_order(mut self, order: &[u8]) -> Self {
         let mut i = 0;
         let len = if order.len() < MAX_ORDER {
@@ -238,6 +253,35 @@ impl<const CH: usize, const PAT: usize, const ROWS: usize> Song<CH, PAT, ROWS> {
             i += 1;
         }
         self.order_len = len;
+        self
+    }
+}
+
+/// A song: multiple tracks playing simultaneously.
+///
+/// `TRACKS` layers, each with `CH` channels, `PAT` patterns, `ROWS` rows.
+/// Track *i* uses voice channels `i*CH .. (i+1)*CH`.
+/// Timing is controlled by `bpm` (1 beat = 4 rows).
+#[derive(Clone, Copy)]
+pub struct Song<const TRACKS: usize, const CH: usize, const PAT: usize, const ROWS: usize> {
+    pub tracks: [Track<CH, PAT, ROWS>; TRACKS],
+    pub bpm: u16,
+}
+
+impl<const TRACKS: usize, const CH: usize, const PAT: usize, const ROWS: usize>
+    Song<TRACKS, CH, PAT, ROWS>
+{
+    pub const fn new(bpm: u16) -> Self {
+        Self {
+            tracks: [Track::new(); TRACKS],
+            bpm,
+        }
+    }
+
+    pub const fn with_track(mut self, idx: usize, track: Track<CH, PAT, ROWS>) -> Self {
+        if idx < TRACKS {
+            self.tracks[idx] = track;
+        }
         self
     }
 }

@@ -1,6 +1,6 @@
 use super::bus::{self, AudioStatus, Command};
 use super::hw::{self, VoiceHw};
-use super::music::{Cell, Effect, Pattern, Pitch, Song, SoundProject, Volume};
+use super::music::{Cell, Effect, Pattern, PatternSource, Pitch, Song, SoundProject, Volume};
 use super::sample::{SampleBank, SampleId};
 use super::voice::{VoiceAlloc, VoiceLayout};
 use crate::runtime;
@@ -105,29 +105,35 @@ impl Engine {
     // Sequenced playback (blocking -- yields internally)
     // -----------------------------------------------------------------------
 
-    /// Play an entire song, pattern by pattern, according to the order list.
+    /// Play a multi-track song. All tracks advance in lockstep; each
+    /// track's current pattern is layered simultaneously.
     ///
-    /// Returns when the song ends or a [`Command::Interrupt`] is received.
-    pub fn play_song<const CH: usize, const PAT: usize, const ROWS: usize>(
+    /// Track *i* occupies voice channels `i*CH .. (i+1)*CH`.
+    /// Playback continues until the longest track's order list is
+    /// exhausted or a [`Command::Interrupt`] is received.
+    pub fn play_song<
+        const TRACKS: usize,
+        const CH: usize,
+        const PAT: usize,
+        const ROWS: usize,
+    >(
         &mut self,
-        song: &Song<CH, PAT, ROWS>,
+        song: &Song<TRACKS, CH, PAT, ROWS>,
     ) {
         self.bpm = song.bpm;
         self.interrupted = false;
 
-        for order_idx in 0..song.order_len {
-            let pat_idx = song.order[order_idx] as usize;
-            if pat_idx >= PAT {
-                continue;
+        let mut max_len: usize = 0;
+        let mut i = 0;
+        while i < TRACKS {
+            if song.tracks[i].order_len > max_len {
+                max_len = song.tracks[i].order_len;
             }
+            i += 1;
+        }
 
-            bus::set_status(AudioStatus {
-                playing: true,
-                current_pattern: order_idx as u16,
-                current_row: 0,
-            });
-
-            if self.play_pattern_inner(&song.patterns[pat_idx], order_idx as u16).interrupted() {
+        for pos in 0..max_len {
+            if self.play_song_position(song, pos).interrupted() {
                 return;
             }
         }
@@ -140,13 +146,57 @@ impl Engine {
         });
     }
 
+    fn play_song_position<
+        const TRACKS: usize,
+        const CH: usize,
+        const PAT: usize,
+        const ROWS: usize,
+    >(
+        &mut self,
+        song: &Song<TRACKS, CH, PAT, ROWS>,
+        pos: usize,
+    ) -> WaitResult {
+        for row in 0..ROWS {
+            bus::set_status(AudioStatus {
+                playing: true,
+                current_pattern: pos as u16,
+                current_row: row as u16,
+            });
+
+            let mut key_on: u32 = 0;
+            let mut key_off: u32 = 0;
+
+            for (track_idx, track) in song.tracks.iter().enumerate() {
+                if pos >= track.order_len {
+                    continue;
+                }
+                let pat_idx = track.order[pos] as usize;
+                if pat_idx >= PAT {
+                    continue;
+                }
+                let ch_offset = track_idx * CH;
+                for ch in 0..CH {
+                    let cell = &track.patterns[pat_idx].cells[row][ch];
+                    let (on, off) = self.apply_cell(ch_offset + ch, cell);
+                    key_on |= on;
+                    key_off |= off;
+                }
+            }
+
+            Self::flush_keys(key_on, key_off);
+
+            if self.wait_row().interrupted() {
+                return WaitResult::Interrupted;
+            }
+        }
+        WaitResult::Complete
+    }
+
     /// Play a single pattern (all rows), then release music voices.
     ///
     /// The engine maintains a running pattern counter so that
     /// [`audio_status()`](super::bus::audio_status) reports meaningful
     /// positions even when patterns are played individually via control flow.
-    ///
-    /// Returns when the pattern ends or a [`Command::Interrupt`] is received.
     pub fn play_pattern<const CH: usize, const ROWS: usize>(
         &mut self,
         pattern: &Pattern<CH, ROWS>,
@@ -155,6 +205,23 @@ impl Engine {
         let idx = self.pattern_counter;
         self.pattern_counter = self.pattern_counter.wrapping_add(1);
         self.play_pattern_inner(pattern, idx);
+        self.release_music_voices();
+    }
+
+    /// Layer multiple patterns simultaneously, then release music voices.
+    ///
+    /// Each pattern gets consecutive channel slots: pattern 0 starts at
+    /// channel 0, pattern 1 at `pat0.channels()`, etc.
+    /// Patterns may have different channel counts but **must** share the
+    /// same row count (checked at runtime).
+    pub fn play_patterns(&mut self, patterns: &[&dyn PatternSource]) {
+        if patterns.is_empty() {
+            return;
+        }
+        self.interrupted = false;
+        let idx = self.pattern_counter;
+        self.pattern_counter = self.pattern_counter.wrapping_add(1);
+        self.play_patterns_inner(patterns, idx);
         self.release_music_voices();
     }
 
@@ -179,6 +246,43 @@ impl Engine {
         WaitResult::Complete
     }
 
+    fn play_patterns_inner(
+        &mut self,
+        patterns: &[&dyn PatternSource],
+        pattern_idx: u16,
+    ) -> WaitResult {
+        let rows = patterns[0].rows();
+
+        for row in 0..rows {
+            bus::set_status(AudioStatus {
+                playing: true,
+                current_pattern: pattern_idx,
+                current_row: row as u16,
+            });
+
+            let mut key_on: u32 = 0;
+            let mut key_off: u32 = 0;
+            let mut ch_offset: usize = 0;
+
+            for pat in patterns {
+                for ch in 0..pat.channels() {
+                    let cell = pat.cell(row, ch);
+                    let (on, off) = self.apply_cell(ch_offset + ch, cell);
+                    key_on |= on;
+                    key_off |= off;
+                }
+                ch_offset += pat.channels();
+            }
+
+            Self::flush_keys(key_on, key_off);
+
+            if self.wait_row().interrupted() {
+                return WaitResult::Interrupted;
+            }
+        }
+        WaitResult::Complete
+    }
+
     fn trigger_row<const CH: usize, const ROWS: usize>(
         &mut self,
         pattern: &Pattern<CH, ROWS>,
@@ -194,6 +298,10 @@ impl Engine {
             key_off |= off;
         }
 
+        Self::flush_keys(key_on, key_off);
+    }
+
+    fn flush_keys(key_on: u32, key_off: u32) {
         if key_off != 0 {
             hw::key_off_mask(key_off);
         }
@@ -358,12 +466,6 @@ impl Engine {
     /// at the top-level coroutine before starting new playback.
     pub fn clear_interrupt(&mut self) {
         self.interrupted = false;
-    }
-
-    /// Reset the pattern counter to 0.
-    /// Useful at the start of a song loop when using `play_pattern` directly.
-    pub fn reset_pattern_counter(&mut self) {
-        self.pattern_counter = 0;
     }
 
     pub fn is_interrupted(&self) -> bool {
