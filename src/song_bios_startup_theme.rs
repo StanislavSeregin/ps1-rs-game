@@ -78,13 +78,14 @@ const ADSR_SWOOSH: u32 = Adsr {
     sm: 1, sd: 1, ssh: 0x10, ss: 0, rm: 1, rsh: 0x0C,
 }.pack();
 
-/// Deep low bell: moderate attack, resonant sustain, smooth release.
+/// Deep low bell: moderate attack, high sustain, prolonged ring-out.
 ///
-/// Sustain: exp decrease shift=16 — rings for ~2 s half-life
-/// Release: exponential, shift=14 — ~0.5 s half-life, natural bell decay
+/// Decay:   shift=10 — ~46 ms half-life, gentle settling
+/// Sustain: level=10 (~69%), exp decrease shift=19 — ~24 s half-life
+/// Release: exponential, shift=16 — ~2 s half-life, long natural tail
 const ADSR_LOW_BELL: u32 = Adsr {
-    am: 1, ash: 0x04, a_s: 0, dsh: 0x06, sl: 0x06,
-    sm: 1, sd: 1, ssh: 0x10, ss: 0, rm: 1, rsh: 0x0E,
+    am: 1, ash: 0x04, a_s: 0, dsh: 0x0A, sl: 0x0A,
+    sm: 1, sd: 1, ssh: 0x13, ss: 0, rm: 1, rsh: 0x10,
 }.pack();
 
 // ---------------------------------------------------------------------------
