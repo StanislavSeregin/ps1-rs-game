@@ -1,6 +1,6 @@
 use crate::runtime::TaskStack;
-use crate::spu2::*;
-use crate::spu2::reverb::ReverbConfig;
+use crate::spu::*;
+use crate::spu::reverb::ReverbConfig;
 
 const KICK: SampleId = SampleId(0);
 const SNARE: SampleId = SampleId(1);

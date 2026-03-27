@@ -108,6 +108,33 @@ impl Volume {
     pub const OFF: Self = Self(0);
 }
 
+/// Stereo panning position.
+///
+/// `0` = centre, negative = left, positive = right.
+/// The full range is `−64` (hard left) to `+64` (hard right).
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub struct Pan(pub i8);
+
+impl Pan {
+    pub const CENTER: Self = Self(0);
+    pub const LEFT: Self = Self(-64);
+    pub const RIGHT: Self = Self(64);
+
+    /// Derive (left, right) volume pair from a base volume.
+    pub const fn apply(self, vol: u16) -> (u16, u16) {
+        let p = self.0 as i16;
+        if p <= 0 {
+            // left-biased: right side attenuated
+            let r = vol as u32 * (64 + p) as u32 / 64;
+            (vol, r as u16)
+        } else {
+            // right-biased: left side attenuated
+            let l = vol as u32 * (64 - p) as u32 / 64;
+            (l as u16, vol)
+        }
+    }
+}
+
 /// Extensible effect slot.
 ///
 /// Starts with only `None`; future variants (portamento, vibrato, etc.)
@@ -127,6 +154,8 @@ pub struct Cell {
     pub sample: Option<SampleId>,
     pub volume: Option<Volume>,
     pub effect: Effect,
+    pub pan: Option<Pan>,
+    pub adsr: Option<u32>,
 }
 
 impl Cell {
@@ -135,6 +164,8 @@ impl Cell {
         sample: None,
         volume: None,
         effect: Effect::None,
+        pan: None,
+        adsr: None,
     };
 
     /// Note-on with default max volume.
@@ -144,6 +175,8 @@ impl Cell {
             sample: Some(sample),
             volume: Some(Volume::MAX),
             effect: Effect::None,
+            pan: None,
+            adsr: None,
         }
     }
 
@@ -154,7 +187,21 @@ impl Cell {
             sample: Some(sample),
             volume: Some(vol),
             effect: Effect::None,
+            pan: None,
+            adsr: None,
         }
+    }
+
+    /// Override the stereo panning for this cell.
+    pub const fn with_pan(mut self, pan: Pan) -> Self {
+        self.pan = Some(pan);
+        self
+    }
+
+    /// Override the ADSR envelope for this cell.
+    pub const fn with_adsr(mut self, adsr: u32) -> Self {
+        self.adsr = Some(adsr);
+        self
     }
 }
 

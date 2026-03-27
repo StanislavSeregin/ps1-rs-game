@@ -1,6 +1,6 @@
 use super::bus::{self, AudioStatus, Command};
 use super::hw::{self, VoiceHw};
-use super::music::{Cell, Effect, Pattern, PatternSource, Pitch, Song, SoundProject, Volume};
+use super::music::{Cell, Effect, Pan, Pattern, PatternSource, Pitch, Song, SoundProject, Volume};
 use super::reverb::ReverbConfig;
 use super::sample::{SampleBank, SampleId};
 use super::voice::{VoiceAlloc, VoiceLayout};
@@ -320,15 +320,11 @@ impl Engine {
     /// Also updates [`reverb_voice_mask`](Self::reverb_voice_mask) according
     /// to the per-channel reverb flags in [`channel_reverb`](Self::channel_reverb).
     fn apply_cell(&mut self, ch: usize, cell: &Cell) -> (u32, u32) {
-        if matches!(
-            cell,
-            Cell {
-                pitch: None,
-                sample: None,
-                volume: None,
-                effect: Effect::None,
-            }
-        ) {
+        if cell.pitch.is_none()
+            && cell.sample.is_none()
+            && cell.volume.is_none()
+            && matches!(cell.effect, Effect::None)
+        {
             return (0, 0);
         }
 
@@ -361,7 +357,9 @@ impl Engine {
             };
 
             let vol = cell.volume.unwrap_or(Volume::MAX).0;
-            voice.prepare(sample_ref.spu_addr, pitch.0, vol, DEFAULT_ADSR);
+            let (vol_l, vol_r) = cell.pan.map_or((vol, vol), |p| p.apply(vol));
+            let adsr = cell.adsr.unwrap_or(DEFAULT_ADSR);
+            voice.prepare(sample_ref.spu_addr, pitch.0, vol_l, vol_r, adsr);
             let voice_bit = 1u32 << voice.id();
             if self.channel_reverb & (1u32 << ch) != 0 {
                 self.reverb_voice_mask |= voice_bit;
@@ -370,7 +368,8 @@ impl Engine {
             (voice_bit, off)
         } else if let Some(vol) = cell.volume {
             if let Some(voice) = &self.channel_voices[ch] {
-                voice.set_volume(vol.0, vol.0);
+                let (vol_l, vol_r) = cell.pan.map_or((vol.0, vol.0), |p| p.apply(vol.0));
+                voice.set_volume(vol_l, vol_r);
             }
             (0, 0)
         } else {
@@ -470,7 +469,8 @@ impl Engine {
             Some(v) => v,
             None => return,
         };
-        voice.trigger(sample_ref.spu_addr, pitch.0, Volume::MAX.0, DEFAULT_ADSR);
+        let vol = Volume::MAX.0;
+        voice.trigger(sample_ref.spu_addr, pitch.0, vol, vol, DEFAULT_ADSR);
         self.voices.release_sfx(&voice);
     }
 

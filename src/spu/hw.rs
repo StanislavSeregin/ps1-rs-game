@@ -79,8 +79,8 @@ impl VoiceHw {
     ///
     /// Use this when batching multiple voice triggers into a single
     /// `key_on_mask` write to avoid the SPU latch race.
-    pub fn prepare(&self, spu_addr: u16, pitch: u16, volume: u16, adsr: u32) {
-        self.set_volume(volume, volume);
+    pub fn prepare(&self, spu_addr: u16, pitch: u16, vol_l: u16, vol_r: u16, adsr: u32) {
+        self.set_volume(vol_l, vol_r);
         self.set_sample_addr(spu_addr);
         self.set_repeat_addr(spu_addr);
         self.set_pitch(pitch);
@@ -88,8 +88,8 @@ impl VoiceHw {
     }
 
     /// Configure and trigger a sample in one call.
-    pub fn trigger(&self, spu_addr: u16, pitch: u16, volume: u16, adsr: u32) {
-        self.prepare(spu_addr, pitch, volume, adsr);
+    pub fn trigger(&self, spu_addr: u16, pitch: u16, vol_l: u16, vol_r: u16, adsr: u32) {
+        self.prepare(spu_addr, pitch, vol_l, vol_r, adsr);
         self.key_on();
     }
 }

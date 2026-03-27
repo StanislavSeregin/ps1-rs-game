@@ -4,17 +4,18 @@
 
 mod common;
 pub mod runtime;
-pub mod spu2;
-mod song;
+pub mod spu;
+mod song_breakbeat;
+mod song_bios_startup_theme;
 
 use psx::gpu::VideoMode;
 use psx::{dprintln, Framebuffer};
-use spu2::audio_status;
+use spu::audio_status;
 
 #[unsafe(no_mangle)]
 fn main() {
     runtime::init();
-    runtime::spawn(song::music_task, &song::MUSIC_STACK);
+    runtime::spawn(song_bios_startup_theme::music_task, &song_bios_startup_theme::MUSIC_STACK);
 
     let buf0 = (0, 0);
     let buf1 = (0, 240);
@@ -31,8 +32,8 @@ fn main() {
         frame += 1;
 
         let status = audio_status();
-        dprintln!(txt, "SPU2 Engine Demo");
-        dprintln!(txt, "----------------");
+        dprintln!(txt, "SPU Engine Demo");
+        dprintln!(txt, "---------------");
         dprintln!(txt, "");
         dprintln!(txt, "Music coroutine");
         dprintln!(txt, "  status:  {}", if status.playing { "Playing" } else { "Stopped" });
