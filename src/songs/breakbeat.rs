@@ -5,9 +5,9 @@ use crate::spu::reverb::ReverbConfig;
 crate::sound_project! {
     pub PROJECT {
         samples: [
-            KICK  => crate::include_vag!("../samples/kick.vag"),
-            SNARE => crate::include_vag!("../samples/snare.vag"),
-            HAT   => crate::include_vag!("../samples/hat.vag"),
+            KICK  => crate::include_vag!("samples/kick.vag"),
+            SNARE => crate::include_vag!("samples/snare.vag"),
+            HAT   => crate::include_vag!("samples/hat.vag"),
         ],
         layout: VoiceLayout::new((0, 16), (16, 8)),
     }

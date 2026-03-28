@@ -7,9 +7,9 @@ use AdsrDir::*;
 crate::sound_project! {
     pub PROJECT {
         samples: [
-            BELL   => crate::include_bytes_skip!("../samples/file_all.spu", 0, 13500),
-            SWOOSH => crate::include_bytes_skip!("../samples/file_all.spu", 13600, 8400),
-            SWEEP  => crate::include_bytes_skip!("../samples/file_all.spu", 22000),
+            BELL   => crate::include_bytes_skip!("samples/file_all.adpcm", 0, 13500),
+            SWOOSH => crate::include_bytes_skip!("samples/file_all.adpcm", 13600, 8400),
+            SWEEP  => crate::include_bytes_skip!("samples/file_all.adpcm", 22000),
         ],
         layout: VoiceLayout::new((0, 24), (0, 0)),
     }
@@ -89,30 +89,30 @@ const SWEEP_PAT: Pattern<128> = Pattern::new()
     .set(48,  3, sweep_quiet(Pitch(0x0558), Pan(32)));
 
 const BELL_PAT: Pattern<128> = Pattern::new()
-    .set(30, 6,  bell(Pitch(0x0C00), Pan(-48)))  // G5
-    .set(33, 7,  bell(Pitch(0x1000), Pan(40)))   // C6
-    .set(36, 8,  bell(Pitch(0x1200), Pan(-32)))  // D6
-    .set(39, 9,  bell(Pitch(0x1800), Pan(56)))   // G6
-    .set(43, 10, bell(Pitch(0x1000), Pan(-24)))  // C6
-    .set(45, 11, bell(Pitch(0x0800), Pan(16)))   // C5
-    .set(46, 12, bell(Pitch(0x0A00), Pan(-40)))  // E5
-    .set(47, 13, bell(Pitch(0x0C00), Pan(48)))   // G5
-    .set(50, 6,  bell(Pitch(0x1000), Pan(-36)))  // C6
-    .set(51, 7,  bell(Pitch(0x1400), Pan(44)))   // E6
-    .set(52, 8,  bell(Pitch(0x1800), Pan(-20)))  // G6
-    .set(64,  6,  bell(Pitch(0x1000), Pan(-56)))  // C6
-    .set(65,  7,  bell(Pitch(0x1400), Pan(52)))   // E6
-    .set(65,  8,  bell(Pitch(0x1800), Pan(24)))   // G6
-    .set(66,  9,  bell(Pitch(0x2000), Pan(-44)))  // C7
-    .set(66,  10, bell(Pitch(0x0C00), Pan(36)))   // G5
-    .set(67,  11, bell(Pitch(0x1400), Pan(-28)))  // E6
-    .set(67,  12, bell(Pitch(0x1200), Pan(48)))   // D6
-    .set(68,  13, bell(Pitch(0x1000), Pan(-52)))  // C6
-    .set(69,  14, bell(Pitch(0x1800), Pan(32)))   // G6
-    .set(69,  15, bell(Pitch(0x1400), Pan(-16)))  // E6
-    .set(71,  6,  bell(Pitch(0x1000), Pan(44)))   // C6
-    .set(72,  7,  bell(Pitch(0x0C00), Pan(-8)))   // G5
-    .set(74,  8,  bell(Pitch(0x1200), Pan(-48)))  // D6
+    .set(30, 6,  bell(Pitch(0x0C00), Pan(-48)))
+    .set(33, 7,  bell(Pitch(0x1000), Pan(40)))
+    .set(36, 8,  bell(Pitch(0x1200), Pan(-32)))
+    .set(39, 9,  bell(Pitch(0x1800), Pan(56)))
+    .set(43, 10, bell(Pitch(0x1000), Pan(-24)))
+    .set(45, 11, bell(Pitch(0x0800), Pan(16)))
+    .set(46, 12, bell(Pitch(0x0A00), Pan(-40)))
+    .set(47, 13, bell(Pitch(0x0C00), Pan(48)))
+    .set(50, 6,  bell(Pitch(0x1000), Pan(-36)))
+    .set(51, 7,  bell(Pitch(0x1400), Pan(44)))
+    .set(52, 8,  bell(Pitch(0x1800), Pan(-20)))
+    .set(64,  6,  bell(Pitch(0x1000), Pan(-56)))
+    .set(65,  7,  bell(Pitch(0x1400), Pan(52)))
+    .set(65,  8,  bell(Pitch(0x1800), Pan(24)))
+    .set(66,  9,  bell(Pitch(0x2000), Pan(-44)))
+    .set(66,  10, bell(Pitch(0x0C00), Pan(36)))
+    .set(67,  11, bell(Pitch(0x1400), Pan(-28)))
+    .set(67,  12, bell(Pitch(0x1200), Pan(48)))
+    .set(68,  13, bell(Pitch(0x1000), Pan(-52)))
+    .set(69,  14, bell(Pitch(0x1800), Pan(32)))
+    .set(69,  15, bell(Pitch(0x1400), Pan(-16)))
+    .set(71,  6,  bell(Pitch(0x1000), Pan(44)))
+    .set(72,  7,  bell(Pitch(0x0C00), Pan(-8)))
+    .set(74,  8,  bell(Pitch(0x1200), Pan(-48)))
     .set(84,  18, low_bell(Pitch(0x0180), Pan(-40)))
     .set(84,  19, low_bell(Pitch(0x0186), Pan(40)));
 

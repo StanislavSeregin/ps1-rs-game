@@ -28,8 +28,8 @@ macro_rules! include_vag {
 /// crate::sound_project! {
 ///     pub PROJECT {
 ///         samples: [
-///             KICK  => crate::include_vag!("../samples/kick.vag"),
-///             SNARE => crate::include_vag!("../samples/snare.vag"),
+///             KICK  => crate::include_vag!("samples/kick.vag"),
+///             SNARE => crate::include_vag!("samples/snare.vag"),
 ///         ],
 ///         layout: VoiceLayout::new((0, 16), (16, 8)),
 ///     }
