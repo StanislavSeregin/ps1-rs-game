@@ -56,9 +56,7 @@ pub extern "C" fn music_task() {
     e.load_project(&PROJECT);
 
     e.enable_reverb(&ReverbConfig::HALL, 0x7FFF, 0x5000);
-    e.set_channel_reverb(0, true);
-    e.set_channel_reverb(1, true);
-    e.set_channel_reverb(2, true);
+    e.set_channel_reverb(0..3, true);
 
     e.set_bpm(BPM);
 

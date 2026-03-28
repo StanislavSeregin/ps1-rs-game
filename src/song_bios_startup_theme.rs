@@ -208,9 +208,7 @@ pub extern "C" fn music_task() {
     e.load_project(&PROJECT);
 
     e.enable_reverb(&ReverbConfig::SPACE, 0x5000, 0x3000);
-    for ch in 0..22 {
-        e.set_channel_reverb(ch, true);
-    }
+    e.set_channel_reverb(0..22, true);
 
     e.set_bpm(BPM);
     e.play_patterns(&[&SWEEP_PAT, &BELL_PAT, &SWOOSH_PAT]);

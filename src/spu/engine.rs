@@ -333,19 +333,26 @@ impl Engine {
         hw::enable_reverb_master();
     }
 
-    /// Enable or disable reverb for a single tracker channel.
+    /// Enable or disable reverb for the given tracker channels.
     ///
-    /// When enabled, any voice assigned to this channel will have its
+    /// `channels` can be a range (`0..22`), an array (`[0, 1, 2]`), etc.
+    /// When enabled, any voice assigned to these channels will have its
     /// EON (Echo On) bit set automatically. The hardware mask is flushed
     /// on every row together with key-on/key-off.
-    pub fn set_channel_reverb(&mut self, channel: usize, enabled: bool) {
-        if channel < 24 {
-            if enabled {
-                self.channel_reverb |= 1u32 << channel;
-            } else {
-                self.channel_reverb &= !(1u32 << channel);
-                if let Some(voice) = &self.channel_voices[channel] {
-                    self.reverb_voice_mask &= !(1u32 << voice.id());
+    pub fn set_channel_reverb(
+        &mut self,
+        channels: impl IntoIterator<Item = usize>,
+        enabled: bool,
+    ) {
+        for channel in channels {
+            if channel < 24 {
+                if enabled {
+                    self.channel_reverb |= 1u32 << channel;
+                } else {
+                    self.channel_reverb &= !(1u32 << channel);
+                    if let Some(voice) = &self.channel_voices[channel] {
+                        self.reverb_voice_mask &= !(1u32 << voice.id());
+                    }
                 }
             }
         }
