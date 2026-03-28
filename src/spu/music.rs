@@ -144,6 +144,133 @@ pub enum Effect {
     None,
 }
 
+// ---------------------------------------------------------------------------
+// ADSR envelope
+//
+// SPU register format (32-bit, two halfwords at voice base + 0x08):
+//
+//   Lower halfword: [Am:1][Ash:5][As:2][Dsh:4][Sl:4]
+//   Upper halfword: [_:1][Sm:1][Sd:1][Ssh:5][Ss:2][Rm:1][Rsh:5]
+//
+// Packed u32 bit positions:
+//    0- 3  Sustain Level          4- 7  Decay Shift
+//    8- 9  Attack Step           10-14  Attack Shift
+//   15     Attack Mode           16-20  Release Shift
+//   21     Release Mode          22-23  Sustain Step
+//   24-28  Sustain Shift         29     Sustain Direction
+//   30     Sustain Mode
+// ---------------------------------------------------------------------------
+
+/// Envelope curve shape.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum AdsrMode {
+    Lin = 0,
+    Exp = 1,
+}
+
+/// Sustain slope direction.
+#[derive(Clone, Copy, PartialEq, Eq)]
+pub enum AdsrDir {
+    Increase = 0,
+    Decrease = 1,
+}
+
+/// ADSR envelope packed into the PS1 SPU register format.
+///
+/// Construct with a const builder chain:
+///
+/// ```ignore
+/// use AdsrMode::*;
+/// use AdsrDir::*;
+///
+/// const BELL: Adsr = Adsr::new()
+///     .decay(0x0A)
+///     .sustain_level(0x0A)
+///     .sustain(Exp, Decrease, 0x0F)
+///     .release(Exp, 0x08);
+/// ```
+///
+/// Omitted phases default to zero (instant / off).
+#[derive(Clone, Copy, PartialEq, Eq)]
+#[repr(transparent)]
+pub struct Adsr(u32);
+
+impl Adsr {
+    pub const DEFAULT: Self = Self(0x80FF_8000);
+
+    /// All zeros: instant attack, no decay, sustain level 0, instant release.
+    pub const fn new() -> Self {
+        Self(0)
+    }
+
+    pub const fn from_raw(raw: u32) -> Self {
+        Self(raw)
+    }
+
+    pub const fn raw(self) -> u32 {
+        self.0
+    }
+
+    /// Set attack curve and speed.
+    ///
+    /// `shift`: 0-31 — higher is slower.
+    pub const fn attack(self, mode: AdsrMode, shift: u8) -> Self {
+        self.attack_step(mode, shift, 0)
+    }
+
+    /// Set attack with fine-grained step (0-3, rarely needed).
+    pub const fn attack_step(self, mode: AdsrMode, shift: u8, step: u8) -> Self {
+        let cleared = self.0 & !0xFF00;
+        let am  = (mode as u32) << 15;
+        let ash = ((shift as u32) & 0x1F) << 10;
+        let a_s = ((step as u32) & 0x03) << 8;
+        Self(cleared | am | ash | a_s)
+    }
+
+    /// Set decay speed (always exponential decrease toward sustain level).
+    ///
+    /// `shift`: 0-15 — higher is slower.
+    pub const fn decay(self, shift: u8) -> Self {
+        let cleared = self.0 & !0x00F0;
+        Self(cleared | (((shift as u32) & 0x0F) << 4))
+    }
+
+    /// Set the sustain level the decay phase targets.
+    ///
+    /// `level`: 0-15 (0 ≈ 6%, 7 ≈ 50%, 10 ≈ 69%, 15 = 100%).
+    pub const fn sustain_level(self, level: u8) -> Self {
+        let cleared = self.0 & !0x000F;
+        Self(cleared | ((level as u32) & 0x0F))
+    }
+
+    /// Set the sustain phase curve, direction, and speed.
+    ///
+    /// `shift`: 0-31 — higher is slower.
+    pub const fn sustain(self, mode: AdsrMode, dir: AdsrDir, shift: u8) -> Self {
+        self.sustain_step(mode, dir, shift, 0)
+    }
+
+    /// Set sustain with fine-grained step (0-3, rarely needed).
+    pub const fn sustain_step(self, mode: AdsrMode, dir: AdsrDir, shift: u8, step: u8) -> Self {
+        let cleared = self.0 & !0x7FC0_0000;
+        let sm  = ((mode as u32) & 1) << 30;
+        let sd  = ((dir as u32) & 1) << 29;
+        let ssh = ((shift as u32) & 0x1F) << 24;
+        let ss  = ((step as u32) & 0x03) << 22;
+        Self(cleared | sm | sd | ssh | ss)
+    }
+
+    /// Set release curve and speed.
+    ///
+    /// `shift`: 0-31 — higher is slower.
+    pub const fn release(self, mode: AdsrMode, shift: u8) -> Self {
+        let cleared = self.0 & !0x003F_0000;
+        let rm  = ((mode as u32) & 1) << 21;
+        let rsh = ((shift as u32) & 0x1F) << 16;
+        Self(cleared | rm | rsh)
+    }
+}
+
 /// One cell in a pattern grid.
 ///
 /// Each field is optional so that a cell can express partial updates
@@ -155,7 +282,7 @@ pub struct Cell {
     pub volume: Option<Volume>,
     pub effect: Effect,
     pub pan: Option<Pan>,
-    pub adsr: Option<u32>,
+    pub adsr: Option<Adsr>,
 }
 
 impl Cell {
@@ -199,7 +326,7 @@ impl Cell {
     }
 
     /// Override the ADSR envelope for this cell.
-    pub const fn with_adsr(mut self, adsr: u32) -> Self {
+    pub const fn with_adsr(mut self, adsr: Adsr) -> Self {
         self.adsr = Some(adsr);
         self
     }

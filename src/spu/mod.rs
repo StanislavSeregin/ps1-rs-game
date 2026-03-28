@@ -9,7 +9,7 @@ pub mod reverb;
 
 pub use sample::SampleId;
 pub use voice::VoiceLayout;
-pub use music::{Pan, Pitch, Volume, Effect, Cell, Pattern, PatternSource, SoundProject};
+pub use music::{Pan, Pitch, Volume, Effect, Adsr, AdsrMode, AdsrDir, Cell, Pattern, PatternSource, SoundProject};
 pub use engine::{Engine, WaitResult};
 pub use bus::{send_command, audio_status, Command};
 pub use reverb::ReverbConfig;

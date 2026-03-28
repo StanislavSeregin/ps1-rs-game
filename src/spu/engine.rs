@@ -1,12 +1,10 @@
 use super::bus::{self, AudioStatus, Command};
 use super::hw::{self, VoiceHw};
-use super::music::{Cell, Effect, Pan, Pattern, PatternSource, Pitch, SoundProject, Volume};
+use super::music::{Adsr, Cell, Effect, Pan, Pattern, PatternSource, Pitch, SoundProject, Volume};
 use super::reverb::ReverbConfig;
 use super::sample::{SampleBank, SampleId};
 use super::voice::{VoiceAlloc, VoiceLayout};
 use crate::runtime;
-
-const DEFAULT_ADSR: u32 = 0x80FF_8000;
 
 /// Convention: one beat = 4 rows (standard 4/4 tracker convention).
 const ROWS_PER_BEAT: u32 = 4;
@@ -277,7 +275,7 @@ impl Engine {
 
             let vol = cell.volume.unwrap_or(Volume::MAX).0;
             let (vol_l, vol_r) = cell.pan.map_or((vol, vol), |p| p.apply(vol));
-            let adsr = cell.adsr.unwrap_or(DEFAULT_ADSR);
+            let adsr = cell.adsr.unwrap_or(Adsr::DEFAULT).raw();
             voice.prepare(sample_ref.spu_addr, pitch.0, vol_l, vol_r, adsr);
             let voice_bit = 1u32 << voice.id();
             if self.channel_reverb & (1u32 << ch) != 0 {
@@ -396,7 +394,7 @@ impl Engine {
             None => return,
         };
         let vol = Volume::MAX.0;
-        voice.trigger(sample_ref.spu_addr, pitch.0, vol, vol, DEFAULT_ADSR);
+        voice.trigger(sample_ref.spu_addr, pitch.0, vol, vol, Adsr::DEFAULT.raw());
         self.voices.release_sfx(&voice);
     }
 
