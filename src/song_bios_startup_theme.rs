@@ -4,18 +4,16 @@ use crate::spu::reverb::ReverbConfig;
 use AdsrMode::*;
 use AdsrDir::*;
 
-const BELL: SampleId = SampleId(0);
-const SWOOSH: SampleId = SampleId(1);
-const SWEEP: SampleId = SampleId(2);
-
-pub const PROJECT: SoundProject<3> = SoundProject {
-    samples: [
-        crate::include_bytes_skip!("../samples/file_all.spu", 0, 13500),
-        crate::include_bytes_skip!("../samples/file_all.spu", 13600, 8400),
-        crate::include_bytes_skip!("../samples/file_all.spu", 22000),
-    ],
-    layout: VoiceLayout::new((0, 24), (0, 0)),
-};
+crate::sound_project! {
+    pub PROJECT {
+        samples: [
+            BELL   => crate::include_bytes_skip!("../samples/file_all.spu", 0, 13500),
+            SWOOSH => crate::include_bytes_skip!("../samples/file_all.spu", 13600, 8400),
+            SWEEP  => crate::include_bytes_skip!("../samples/file_all.spu", 22000),
+        ],
+        layout: VoiceLayout::new((0, 24), (0, 0)),
+    }
+}
 
 const ADSR_SWEEP: Adsr = Adsr::new()
     .attack(Exp, 0x0A)
@@ -45,35 +43,35 @@ const ADSR_LOW_BELL: Adsr = Adsr::new()
 const BPM: u16 = 300;
 
 const fn sweep(pitch: Pitch, pan: Pan) -> Cell {
-    Cell::note_vol(SWEEP, pitch, Volume::HALF)
+    Cell::note_vol(PROJECT::SWEEP, pitch, Volume::HALF)
         .with_pan(pan)
         .with_adsr(ADSR_SWEEP)
 }
 
 const fn sweep_bass(pitch: Pitch, pan: Pan) -> Cell {
-    Cell::note_vol(SWEEP, pitch, Volume(0x1400))
+    Cell::note_vol(PROJECT::SWEEP, pitch, Volume(0x1400))
         .with_pan(pan)
         .with_adsr(ADSR_SWEEP)
 }
 
 const fn sweep_quiet(pitch: Pitch, pan: Pan) -> Cell {
-    Cell::note_vol(SWEEP, pitch, Volume::QUARTER)
+    Cell::note_vol(PROJECT::SWEEP, pitch, Volume::QUARTER)
         .with_pan(pan)
         .with_adsr(ADSR_SWEEP)
 }
 
 const fn bell(pitch: Pitch, pan: Pan) -> Cell {
-    Cell::note_vol(BELL, pitch, Volume(0x2800))
+    Cell::note_vol(PROJECT::BELL, pitch, Volume(0x2800))
         .with_pan(pan)
         .with_adsr(ADSR_BELL)
 }
 
 const fn swoosh_cell(pitch: Pitch, pan: Pan) -> Cell {
-    Cell::note(SWOOSH, pitch).with_pan(pan).with_adsr(ADSR_SWOOSH)
+    Cell::note(PROJECT::SWOOSH, pitch).with_pan(pan).with_adsr(ADSR_SWOOSH)
 }
 
 const fn low_bell(pitch: Pitch, pan: Pan) -> Cell {
-    Cell::note(BELL, pitch).with_pan(pan).with_adsr(ADSR_LOW_BELL)
+    Cell::note(PROJECT::BELL, pitch).with_pan(pan).with_adsr(ADSR_LOW_BELL)
 }
 
 const SWEEP_PAT: Pattern<128> = Pattern::new()
@@ -126,7 +124,7 @@ pub static MUSIC_STACK: TaskStack<2048> = TaskStack::new();
 
 pub extern "C" fn music_task() {
     let mut e = Engine::take().unwrap();
-    e.load_project(&PROJECT);
+    e.load_project(&PROJECT::DATA);
     e.set_bpm(BPM);
 
     e.enable_reverb(&ReverbConfig::SPACE, 0x5000, 0x3000);
