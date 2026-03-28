@@ -1,6 +1,6 @@
 use super::bus::{self, AudioStatus, Command};
 use super::hw::{self, VoiceHw};
-use super::music::{Cell, Effect, Pan, Pattern, PatternSource, Pitch, Song, SoundProject, Volume};
+use super::music::{Cell, Effect, Pan, Pattern, PatternSource, Pitch, SoundProject, Volume};
 use super::reverb::ReverbConfig;
 use super::sample::{SampleBank, SampleId};
 use super::voice::{VoiceAlloc, VoiceLayout};
@@ -111,87 +111,6 @@ impl Engine {
     // -----------------------------------------------------------------------
     // Sequenced playback (blocking -- yields internally)
     // -----------------------------------------------------------------------
-
-    /// Play a multi-track song. All tracks advance in lockstep; each
-    /// track's current pattern is layered simultaneously.
-    ///
-    /// All tracks share the global channel namespace — use distinct
-    /// channel indices in each track's patterns to avoid collisions.
-    /// Playback continues until the longest track's order list is
-    /// exhausted or a [`Command::Interrupt`] is received.
-    pub fn play_song<const TRACKS: usize, const PAT: usize, const ROWS: usize>(
-        &mut self,
-        song: &Song<TRACKS, PAT, ROWS>,
-    ) {
-        self.bpm = song.bpm;
-        self.interrupted = false;
-
-        let mut max_len: usize = 0;
-        let mut i = 0;
-        while i < TRACKS {
-            if song.tracks[i].order_len > max_len {
-                max_len = song.tracks[i].order_len;
-            }
-            i += 1;
-        }
-
-        for pos in 0..max_len {
-            if self.play_song_position(song, pos).interrupted() {
-                return;
-            }
-        }
-
-        self.release_music_voices();
-        bus::set_status(AudioStatus {
-            playing: false,
-            current_pattern: 0,
-            current_row: 0,
-        });
-    }
-
-    fn play_song_position<const TRACKS: usize, const PAT: usize, const ROWS: usize>(
-        &mut self,
-        song: &Song<TRACKS, PAT, ROWS>,
-        pos: usize,
-    ) -> WaitResult {
-        for row in 0..ROWS {
-            bus::set_status(AudioStatus {
-                playing: true,
-                current_pattern: pos as u16,
-                current_row: row as u16,
-            });
-
-            let mut key_on: u32 = 0;
-            let mut key_off: u32 = 0;
-
-            for track in song.tracks.iter() {
-                if pos >= track.order_len {
-                    continue;
-                }
-                let pat_idx = track.order[pos] as usize;
-                if pat_idx >= PAT {
-                    continue;
-                }
-                let pat = &track.patterns[pat_idx];
-                for i in 0..pat.event_count() {
-                    let ev = pat.event(i);
-                    if ev.row as usize == row {
-                        let (on, off) = self.apply_cell(ev.ch as usize, &ev.cell);
-                        key_on |= on;
-                        key_off |= off;
-                    }
-                }
-            }
-
-            Self::flush_keys(key_on, key_off);
-            self.flush_reverb();
-
-            if self.wait_row().interrupted() {
-                return WaitResult::Interrupted;
-            }
-        }
-        WaitResult::Complete
-    }
 
     /// Play a single pattern (all rows), then release music voices.
     ///

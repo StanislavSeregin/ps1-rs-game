@@ -131,22 +131,22 @@ const fn low_bell(pitch: Pitch, pan: Pan) -> Cell {
 }
 
 // ---------------------------------------------------------------------------
-// Position 0 (rows 0–63, 3.2 s)
+// Patterns — 128 rows = two former 64-row positions (6.4 s @ BPM 300)
 //
-//   t = 0.0 s  Spacious Sweep — bass foundation + main note (plays ALONE)
+// Rows 0–63: first half (sweep intro + bells; no swoosh).
+// Rows 64–127: second half (swoosh + bell cacophony). Sweep has no new
+// triggers here so voices sustain across the boundary — one `play_patterns`
+// call avoids `release_music_voices` between halves.
+//
+// First half timing:
+//   t = 0.0 s  Spacious Sweep — bass + main note (alone)
 //   t = 1.5 s  Bell twinkling begins
-//   t = 2.4 s  Spacious Sweep — second note enters
+//   t = 2.4 s  Sweep second note
+// Second half (t ≥ 3.2 s): swoosh + bell cacophony, deep low bell ~4.2 s
 // ---------------------------------------------------------------------------
 
-/// Spacious Sweep voices — three octave layers, same channels for both notes.
-///
-/// When the second note triggers on the same channel, SPU naturally replaces
-/// the first note so both aren't fighting for headroom.
-///
-/// Bass @ ~5.5 kHz → ~3.7 kHz: deep foundation (ch 20-21)
-/// Mid  @ ~11  kHz → ~7.3 kHz: main lead (ch 0-1)
-/// High @ ~22  kHz → ~14.6 kHz: quiet shimmer (ch 2-3)
-const SWEEP_PAT_0: Pattern<64> = Pattern::new()
+/// Spacious Sweep — rows 0–63 only; ADSR sustain carries through rows 64–127.
+const SWEEP_PAT: Pattern<128> = Pattern::new()
     // ---- first note (G) — deep bass foundation ----
     .set(0, 20, sweep_bass(Pitch(0x0200), Pan(-16)))
     .set(0, 21, sweep_bass(Pitch(0x0203), Pan(16)))
@@ -162,11 +162,8 @@ const SWEEP_PAT_0: Pattern<64> = Pattern::new()
     .set(48,  2, sweep_quiet(Pitch(0x0555), Pan(-32)))
     .set(48,  3, sweep_quiet(Pitch(0x0558), Pan(32)));
 
-/// Bell twinkling — starts 1.5 s after the sweep.
-///
-/// Sequence: G → C → D → G(8va) → C → C5 → E5 → G5 → C-E-G arpeggio.
-/// Each bell is panned to a different position for stereo shimmer.
-const BELL_PAT_0: Pattern<64> = Pattern::new()
+/// Bells: twinkling (rows 0–63) then cacophony + deep low bell (64–127).
+const BELL_PAT: Pattern<128> = Pattern::new()
     .set(30, 6,  bell(Pitch(0x0C00), Pan(-48)))  // G5
     .set(33, 7,  bell(Pitch(0x1000), Pan(40)))   // C6
     .set(36, 8,  bell(Pitch(0x1200), Pan(-32)))  // D6
@@ -175,71 +172,30 @@ const BELL_PAT_0: Pattern<64> = Pattern::new()
     .set(45, 11, bell(Pitch(0x0800), Pan(16)))   // C5
     .set(46, 12, bell(Pitch(0x0A00), Pan(-40)))  // E5
     .set(47, 13, bell(Pitch(0x0C00), Pan(48)))   // G5
-    // C-major arpeggio
-    .set(50, 6,  bell(Pitch(0x1000), Pan(-36)))  // C6
+    .set(50, 6,  bell(Pitch(0x1000), Pan(-36)))  // C6 — arpeggio
     .set(51, 7,  bell(Pitch(0x1400), Pan(44)))   // E6
-    .set(52, 8,  bell(Pitch(0x1800), Pan(-20))); // G6
+    .set(52, 8,  bell(Pitch(0x1800), Pan(-20)))  // G6
+    // ---- second half (former position 1), rows +64 ----
+    .set(64,  6,  bell(Pitch(0x1000), Pan(-56)))  // C6
+    .set(65,  7,  bell(Pitch(0x1400), Pan(52)))   // E6
+    .set(65,  8,  bell(Pitch(0x1800), Pan(24)))   // G6
+    .set(66,  9,  bell(Pitch(0x2000), Pan(-44)))  // C7
+    .set(66,  10, bell(Pitch(0x0C00), Pan(36)))   // G5
+    .set(67,  11, bell(Pitch(0x1400), Pan(-28)))  // E6
+    .set(67,  12, bell(Pitch(0x1200), Pan(48)))   // D6
+    .set(68,  13, bell(Pitch(0x1000), Pan(-52)))  // C6
+    .set(69,  14, bell(Pitch(0x1800), Pan(32)))   // G6
+    .set(69,  15, bell(Pitch(0x1400), Pan(-16)))  // E6
+    .set(71,  6,  bell(Pitch(0x1000), Pan(44)))   // C6
+    .set(72,  7,  bell(Pitch(0x0C00), Pan(-8)))   // G5
+    .set(74,  8,  bell(Pitch(0x1200), Pan(-48)))  // D6
+    .set(84,  18, low_bell(Pitch(0x0180), Pan(-40)))
+    .set(84,  19, low_bell(Pitch(0x0186), Pan(40)));
 
-/// No swoosh in position 0.
-const SWOOSH_PAT_0: Pattern<64> = Pattern::new();
-
-// ---------------------------------------------------------------------------
-// Position 1 (rows 0–63, 3.2 s — begins at t = 3.2 s)
-//
-//   t = 3.2 s  Swoosh low enters + bell cacophony
-//   t = 3.5 s  Swoosh high layers in
-//   t = 4.2 s  Deep low bell
-// ---------------------------------------------------------------------------
-
-/// Sweep voices continue through ADSR sustain — no new triggers.
-const SWEEP_PAT_1: Pattern<64> = Pattern::new();
-
-/// Bell cacophony — rapid-fire notes, then a deep low bell.
-const BELL_PAT_1: Pattern<64> = Pattern::new()
-    // ---- cacophony: one or two bells per row ----
-    .set(0,  6,  bell(Pitch(0x1000), Pan(-56)))  // C6
-    .set(1,  7,  bell(Pitch(0x1400), Pan(52)))   // E6
-    .set(1,  8,  bell(Pitch(0x1800), Pan(24)))   // G6
-    .set(2,  9,  bell(Pitch(0x2000), Pan(-44)))  // C7
-    .set(2,  10, bell(Pitch(0x0C00), Pan(36)))   // G5
-    .set(3,  11, bell(Pitch(0x1400), Pan(-28)))  // E6
-    .set(3,  12, bell(Pitch(0x1200), Pan(48)))   // D6
-    .set(4,  13, bell(Pitch(0x1000), Pan(-52)))  // C6
-    .set(5,  14, bell(Pitch(0x1800), Pan(32)))   // G6
-    .set(5,  15, bell(Pitch(0x1400), Pan(-16)))  // E6
-    .set(7,  6,  bell(Pitch(0x1000), Pan(44)))   // C6
-    .set(8,  7,  bell(Pitch(0x0C00), Pan(-8)))   // G5
-    .set(10, 8,  bell(Pitch(0x1200), Pan(-48)))  // D6
-    // ---- deep low bell, stereo pair with detune ----
-    .set(20, 18, low_bell(Pitch(0x0180), Pan(-40)))
-    .set(20, 19, low_bell(Pitch(0x0186), Pan(40)));
-
-/// Swoosh — reversed glass.  The lower voice enters first, creating the
-/// initial dramatic sweep; the higher voice layers on top ~300 ms later
-/// adding metallic brightness.
-const SWOOSH_PAT_1: Pattern<64> = Pattern::new()
-    // Lower swoosh — deeper, enters first
-    .set(0, 16, swoosh_cell(Pitch(0x0600), Pan(-32)))
-    // Higher swoosh — brighter, added on top
-    .set(6, 17, swoosh_cell(Pitch(0x0C00), Pan(32)));
-
-// ---------------------------------------------------------------------------
-// Song assembly — 3 tracks × 2 positions × 64 rows = 6.4 seconds
-// ---------------------------------------------------------------------------
-
-const BOOT_SONG: Song<3, 2, 64> = Song::new(BPM)
-    .with_track(0, Track::new()
-        .with_pattern(0, SWEEP_PAT_0)
-        .with_pattern(1, SWEEP_PAT_1)
-        .with_order(&[0, 1]))
-    .with_track(1, Track::new()
-        .with_pattern(0, BELL_PAT_0)
-        .with_pattern(1, BELL_PAT_1)
-        .with_order(&[0, 1]))
-    .with_track(2, Track::new()
-        .with_pattern(0, SWOOSH_PAT_0)
-        .with_pattern(1, SWOOSH_PAT_1)
-        .with_order(&[0, 1]));
+/// Swoosh — only in second half (rows 64–127).
+const SWOOSH_PAT: Pattern<128> = Pattern::new()
+    .set(64, 16, swoosh_cell(Pitch(0x0600), Pan(-32)))
+    .set(70, 17, swoosh_cell(Pitch(0x0C00), Pan(32)));
 
 // ---------------------------------------------------------------------------
 // Entry point
@@ -256,5 +212,6 @@ pub extern "C" fn music_task() {
         e.set_channel_reverb(ch, true);
     }
 
-    e.play_song(&BOOT_SONG);
+    e.set_bpm(BPM);
+    e.play_patterns(&[&SWEEP_PAT, &BELL_PAT, &SWOOSH_PAT]);
 }

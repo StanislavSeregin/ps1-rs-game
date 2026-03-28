@@ -8,7 +8,7 @@ use super::sample::SampleId;
 pub enum Command {
     /// Trigger a one-shot sound effect on the SFX voice pool.
     PlaySfx(SampleId, Pitch),
-    /// Signal the engine to abort the current `play_pattern`/`play_song`.
+    /// Signal the engine to abort the current `play_pattern` / `play_patterns`.
     Interrupt,
     /// Change the sequencer BPM (1 beat = 4 rows).
     SetBpm(u16),
