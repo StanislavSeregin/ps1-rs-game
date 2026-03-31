@@ -2,6 +2,8 @@ use super::hw;
 
 const SPU_RAM_START: u16 = 0x1000;
 
+const ADPCM_BLOCK_ALIGN: u16 = 16;
+
 /// Typed sample index used to reference loaded samples.
 #[derive(Clone, Copy, PartialEq, Eq)]
 pub struct SampleId(pub u8);
@@ -48,17 +50,19 @@ impl<const MAX: usize> SampleBank<MAX> {
     pub fn load(&mut self, id: SampleId, data: &[u8]) -> Result<&SampleRef, &'static str> {
         let slot = id.0 as usize;
         if slot >= MAX {
-            return Err("sample id out of range");
+            return Err("bad sample id");
         }
         if data.is_empty() {
-            return Err("empty audio data");
+            return Err("empty sample");
         }
 
         let size = data.len() as u16;
-        let addr = self.next_addr;
-        let end = self.next_addr.wrapping_add(size);
-        if end > self.addr_limit || end < self.next_addr {
-            return Err("sample data would overlap reverb work area");
+        let addr = align_up_to(self.next_addr, ADPCM_BLOCK_ALIGN).ok_or("spu ram full")?;
+        let end = addr
+            .checked_add(size)
+            .ok_or("spu ram full")?;
+        if end > self.addr_limit {
+            return Err("spu ram full");
         }
         self.next_addr = end;
 
@@ -82,5 +86,15 @@ impl<const MAX: usize> SampleBank<MAX> {
         self.slots = [None; MAX];
         self.next_addr = SPU_RAM_START;
         // addr_limit is intentionally preserved across resets
+    }
+}
+
+fn align_up_to(addr: u16, align: u16) -> Option<u16> {
+    let mask = (align - 1) as u32;
+    let aligned = ((addr as u32) + mask) & !mask;
+    if aligned > u16::MAX as u32 {
+        None
+    } else {
+        Some(aligned as u16)
     }
 }
